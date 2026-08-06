@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NagramX Video Timer</string>
+    <string name="app_description">NagramX 后台视频定时播放模块</string>
+    <string name="module_api">API %1$d</string>
+    <string name="module_scope">作用域：%1$s</string>
+    <string name="module_status_ready">LSPosed 服务已连接</string>
+    <string name="module_status_unavailable">LSPosed 服务不可用</string>
+    <string name="module_status_hint">请确认模块已启用，并重启目标应用</string>
+    <string name="target_status_detected">目标：%1$s %2$s (%3$d)\n不限制 versionCode，运行时按类和方法签名探测兼容性</string>
+    <string name="target_status_missing">未检测到 %1$s</string>
+</resources>

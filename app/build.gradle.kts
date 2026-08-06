@@ -2,16 +2,19 @@ plugins {
     alias(libs.plugins.agp.app)
 }
 
+val moduleVersionCode = providers.gradleProperty("MODULE_VERSION_CODE").get().toInt()
+val moduleVersionName = providers.gradleProperty("MODULE_VERSION_NAME").get()
+
 android {
-    namespace = "io.github.libxposed.example"
+    namespace = "com.shitianyaa.nagramx.videotimer"
     compileSdk = 37
     buildToolsVersion = "37.0.0"
 
     defaultConfig {
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = moduleVersionCode
+        versionName = moduleVersionName
     }
 
     buildTypes {
@@ -21,10 +24,6 @@ android {
             proguardFiles("proguard-rules.pro")
             signingConfig = signingConfigs["debug"]
         }
-    }
-
-    buildFeatures {
-        viewBinding = true
     }
 
     compileOptions {
