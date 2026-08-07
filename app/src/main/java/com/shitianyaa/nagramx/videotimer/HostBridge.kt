@@ -1,5 +1,6 @@
 package com.shitianyaa.nagramx.videotimer
 
+import java.lang.reflect.Constructor
 import java.lang.reflect.Field
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
@@ -66,6 +67,19 @@ internal class HostBridge(
         return null
     }
 
+    fun newInstance(type: Class<*>?, vararg args: Any?): Any? {
+        if (type == null) return null
+        val constructor = findConstructor(type, args) ?: return null
+        return try {
+            makeAccessible(constructor)
+            constructor.newInstance(*args)
+        } catch (t: Throwable) {
+            val cause = (t as? InvocationTargetException)?.targetException ?: t
+            logger("实例化 ${type.name} 失败", cause)
+            null
+        }
+    }
+
     fun getField(instance: Any?, name: String): Any? {
         if (instance == null) return null
         val field = findField(instance.javaClass, name) ?: return null
@@ -85,21 +99,31 @@ internal class HostBridge(
     fun setField(instance: Any?, name: String, value: Any?): Boolean {
         if (instance == null) return false
         val field = findField(instance.javaClass, name) ?: return false
+        return setField(instance, field, value)
+    }
+
+    fun setField(instance: Any?, field: Field?, value: Any?): Boolean {
+        if (instance == null || field == null) return false
         return try {
             field.set(instance, value)
             true
         } catch (t: Throwable) {
-            logger("写入字段 $name 失败", t)
+            logger("写入字段 ${field.name} 失败", t)
             false
         }
     }
 
     fun getStaticField(type: Class<*>?, name: String): Any? {
         val field = findField(type, name) ?: return null
+        return getStaticField(field)
+    }
+
+    fun getStaticField(field: Field?): Any? {
+        if (field == null) return null
         return try {
             field.get(null)
         } catch (t: Throwable) {
-            logger("读取静态字段 $name 失败", t)
+            logger("读取静态字段 ${field.declaringClass.name}.${field.name} 失败", t)
             null
         }
     }
@@ -140,11 +164,28 @@ internal class HostBridge(
         }
     }
 
+    private fun findConstructor(type: Class<*>, args: Array<out Any?>): Constructor<*>? {
+        return try {
+            type.declaredConstructors.firstOrNull { constructor ->
+                constructor.parameterTypes.size == args.size &&
+                    constructor.parameterTypes.withIndex().all { (index, parameter) ->
+                        val argument = args.getOrNull(index)
+                        argument == null && !parameter.isPrimitive ||
+                            argument != null && box(parameter).isAssignableFrom(argument.javaClass)
+                    }
+            }
+        } catch (t: Throwable) {
+            logger("枚举 ${type.name} 构造方法失败", t)
+            null
+        }
+    }
+
     private fun makeAccessible(member: Any) {
         try {
             when (member) {
                 is Method -> member.isAccessible = true
                 is Field -> member.isAccessible = true
+                is Constructor<*> -> member.isAccessible = true
             }
         } catch (t: Throwable) {
             logger("设置反射访问权限失败", t)

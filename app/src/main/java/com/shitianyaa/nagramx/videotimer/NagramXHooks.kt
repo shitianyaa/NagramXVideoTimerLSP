@@ -29,6 +29,7 @@ internal class NagramXHooks(
         log(
             "Hook 已安装：version=${profile.versionName}/${profile.versionCode}, " +
                 "nativeBackground=${profile.hasNativeBackgroundPlayback}, " +
+                "photoViewerPip=${profile.canKeepPhotoViewerForTimer}, " +
                 "legacyTransfer=${profile.transferPlayerMethod != null}",
         )
     }
