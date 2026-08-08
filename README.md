@@ -1,29 +1,42 @@
 # NagramX Video Timer LSP
 
-[![构建状态](https://github.com/shitianyaa/NagramXVideoTimerLSP/actions/workflows/build-release.yml/badge.svg)](https://github.com/shitianyaa/NagramXVideoTimerLSP/actions/workflows/build-release.yml)
-[![最新版本](https://img.shields.io/github/v/release/shitianyaa/NagramXVideoTimerLSP?display_name=tag)](https://github.com/shitianyaa/NagramXVideoTimerLSP/releases/latest)
-[![许可证](https://img.shields.io/github/license/shitianyaa/NagramXVideoTimerLSP)](LICENSE)
+[![构建状态](https://img.shields.io/github/actions/workflow/status/shitianyaa/NagramXVideoTimerLSP/build-release.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=Build)](https://github.com/shitianyaa/NagramXVideoTimerLSP/actions/workflows/build-release.yml)
+[![最新版本](https://img.shields.io/github/v/release/shitianyaa/NagramXVideoTimerLSP?style=for-the-badge&logo=github&logoColor=white&label=Release)](https://github.com/shitianyaa/NagramXVideoTimerLSP/releases/latest)
+[![下载量](https://img.shields.io/github/downloads/shitianyaa/NagramXVideoTimerLSP/total?style=for-the-badge&logo=download&logoColor=white&label=Downloads)](https://github.com/shitianyaa/NagramXVideoTimerLSP/releases)
+[![许可证](https://img.shields.io/github/license/shitianyaa/NagramXVideoTimerLSP?style=for-the-badge&logo=apache&logoColor=white&label=License)](LICENSE)
 
-基于 [libxposed API](https://github.com/libxposed/api) 开发的现代 LSPosed 模块，为原版 NagramX 提供后台视频播放和定时停止入口。
+[![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](#兼容范围)
+[![NagramX](https://img.shields.io/badge/Target-nu.gpu.nagram-26A5E4?style=flat-square&logo=telegram&logoColor=white)](#兼容范围)
+[![LSPosed](https://img.shields.io/badge/LSPosed-API%20101--102-F48FB1?style=flat-square)](#兼容范围)
+[![Kotlin](https://img.shields.io/badge/Kotlin-JDK%2021-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](#本地构建)
+[![Changelog](https://img.shields.io/badge/Changelog-Keep%20a%20Changelog-E05735?style=flat-square)](CHANGELOG.md)
 
-当前版本：`1.1.0`
+基于 [libxposed API](https://github.com/libxposed/api) 的 LSPosed 模块，为原版 NagramX 提供**后台视频播放**与**定时停止**入口。
 
 ## 功能
 
-- 在 NagramX 的视频设置菜单中提供“后台定时播放”入口。
-- 支持播放 15/30/45/60/90 分钟后停止，也可以用时/分滚轮自定义时长。
-- 支持当前视频播放结束后停止。
-- 支持取消当前定时器，同时保持后台播放。
-- 退出全屏后音频继续播放，定时器在后台照常倒计时。
-- 通知栏播放控制与媒体会话：播放/暂停、上一个/下一个、进度显示。
-- 聊天页顶部迷你播放器，显示标题和剩余定时时长，点按回到全屏。
-- 播放列表面板，可切换同一会话内的其他视频。
-- 旧版宿主优先沿用 PhotoViewer 原生“置顶播放”（PiP）链路，播放器缓冲时也可以先开启定时，首帧就绪后自动切换置顶播放。
-- 定时结束只暂停视频并保留置顶播放；取消定时不会销毁当前播放器。
-- 优先调用宿主已有的后台播放与睡眠定时 API。
-- 对缺少新版 API、但仍保留旧播放器转移入口的版本提供兼容路径。
-- 只在 NagramX 主进程加载，避免影响其他应用和子进程。
-- 自带状态页，可查看 LSPosed 服务、API、作用域和目标应用版本。
+### 定时与后台
+
+- 在视频设置菜单中提供「后台定时播放」入口
+- 支持 15 / 30 / 45 / 60 / 90 分钟，以及时/分滚轮自定义时长
+- 支持「当前视频结束后停止」
+- 支持取消定时器，同时保持后台播放
+- 退出全屏后音频继续，定时器在后台照常倒计时
+
+### 播放控制与界面
+
+- 通知栏媒体会话：播放 / 暂停、上一个 / 下一个、进度显示
+- 聊天页顶部迷你播放器：标题 + 剩余定时时长，点按回到全屏
+- 播放列表面板：切换同一会话内的其他视频，并显示缩略图
+- 定时菜单在激活状态下显示剩余时长并高亮
+
+### 兼容与安全
+
+- 优先复用宿主已有的后台播放与睡眠定时 API
+- 旧版宿主优先走 PhotoViewer 原生「置顶播放」（PiP）链路
+- 缓冲或边下边播时也可先开定时，首帧就绪后再切置顶播放
+- 定时结束只暂停并保留置顶播放；取消定时不销毁播放器
+- 仅在 NagramX 主进程加载；自带状态页可查看服务、API、作用域与宿主版本
 
 ## 兼容范围
 
@@ -32,108 +45,125 @@
 | 目标应用 | 原版 NagramX |
 | 目标包名 | `nu.gpu.nagram` |
 | NagramX 版本 | 不限制 `versionCode` |
-| Android | Android 8.0 及以上 |
-| LSPosed API | libxposed API 101-102 |
+| Android | 8.0+（`minSdk 26`） |
+| LSPosed | libxposed API 101–102 |
 
-模块不会根据 `versionCode` 拒绝加载，而是在运行时检查 NagramX 的类、字段和方法签名。若目标版本结构发生变化，模块会记录日志并安全停止安装相关 Hook，因此“不限制版本”不代表所有历史或未来版本都保证可用。
+模块不会按 `versionCode` 拒绝加载，而是在运行时检查类、字段与方法签名。宿主结构变化时会写日志并安全停用相关 Hook，因此「不限制版本」不等于所有历史或未来版本都可用。
 
-如果宿主版本已经完整包含相同的后台定时播放 UI 和 API，模块会跳过重复注入。
+若宿主已完整包含相同的后台定时播放 UI/API，模块会跳过重复注入。
 
 ## 安装
 
-1. 从 [Releases](https://github.com/shitianyaa/NagramXVideoTimerLSP/releases) 下载最新 APK 并安装。
-2. 在 LSPosed 中启用 `NagramX Video Timer`。
-3. 确认静态作用域为原版 NagramX（`nu.gpu.nagram`）。
-4. 强制停止并重新启动 NagramX。
+1. 从 [Releases](https://github.com/shitianyaa/NagramXVideoTimerLSP/releases/latest) 下载最新 APK 并安装
+2. 在 LSPosed 中启用 **NagramX Video Timer**
+3. 确认作用域为原版 NagramX（`nu.gpu.nagram`）
+4. 强制停止并重新启动 NagramX
 
 ## 使用
 
-1. 在 NagramX 中打开一个普通视频并开始播放。
-2. 打开视频设置菜单。
-3. 点击“后台定时播放”。
-4. 选择停止时间，视频将转入后台继续播放。
+1. 在 NagramX 中打开普通视频并开始播放
+2. 打开视频设置菜单
+3. 点击「后台定时播放」
+4. 选择停止时间；视频转入后台继续播放
 
-可选项包括：
+### 菜单项
 
-- 播放 15 分钟
-- 播放 30 分钟
-- 播放 45 分钟
-- 播放 1 小时
-- 播放 90 分钟
-- 自定义时长（时 / 分双滚轮，可循环滚动）
-- 当前视频结束后停止
-- 取消当前定时器（仅在存在活动定时器时显示）
+| 选项 | 说明 |
+| --- | --- |
+| 播放 15 / 30 / 45 / 60 / 90 分钟 | 固定时长后停止 |
+| 自定义时长 | 时 / 分双滚轮，可循环滚动 |
+| 当前视频结束后停止 | 播完当前条目即停 |
+| 取消当前定时器 | 仅在有活动定时器时显示；取消后仍保持后台播放 |
 
-定时启动后：
+### 定时启动后
 
-- 退出全屏，音频继续播放，通知栏出现播放控制。
-- 回到聊天页时顶部会显示迷你播放器，其中带剩余定时时长，点按可回到全屏。
-- 点迷你播放器右侧的列表图标，可以切换同一会话里的其他视频。
+- 退出全屏：音频继续，通知栏出现播放控制
+- 回到聊天页：顶部迷你播放器显示剩余定时，点按可回全屏
+- 迷你播放器右侧列表图标：切换同一会话内其他视频
 
 ## 兼容策略
 
-模块按以下顺序选择实现路径：
+模块按优先级选择实现路径：
 
-1. 宿主已有完整后台定时播放 UI/API：不重复注入。
-2. 宿主保留 `startVideoBackgroundPlayback(int, int)`：注入菜单并调用宿主原生实现。
-3. 宿主保留 PhotoViewer 的 PiP 链路：由模块保留原播放器所有权，缓冲完成后调用宿主原生置顶播放，并由模块维护计时器。
-4. 宿主连 PiP 链路也没有、但仍保留旧版播放器转移入口：由模块转移播放器并维护计时器。
+| 优先级 | 条件 | 行为 | 稳定性 |
+| --- | --- | --- | --- |
+| 1 | 宿主已有完整后台定时 UI/API | 不重复注入 | 最高 |
+| 2 | 存在 `startVideoBackgroundPlayback(int, int)` | 注入菜单，调用宿主原生实现 | 高 |
+| 3 | 存在 PhotoViewer PiP 链路 | 保留原播放器所有权，缓冲完成后置顶播放，模块维护计时器 | 中高 |
+| 4 | 仅有旧版播放器转移入口 | 模块转移播放器并维护计时器 | 较低 |
 
-最后一种兼容路径依赖 NagramX 内部实现，稳定性低于原生 API 和 PhotoViewer PiP 路径。若菜单没有出现，请先查看日志确认目标版本是否缺少必要签名。
+路径 4 依赖 NagramX 内部实现。若菜单未出现，请先看日志确认目标版本是否缺少必要签名。
 
 ## 日志
 
-```powershell
+```bash
 adb logcat -s NagramXVideoTimer
 ```
 
-日志会记录模块加载、宿主版本、签名探测、Hook 安装和播放器转移错误。
+会记录模块加载、宿主版本、签名探测、Hook 安装与播放器转移错误。
 
 ## 本地构建
 
-环境要求：
+**环境**
 
 - JDK 21
 - Android SDK 37
 
-在 `local.properties` 中配置 Android SDK：
+在 `local.properties` 中配置 SDK 路径：
 
 ```properties
-sdk.dir=D\:\\Android SDK
+sdk.dir=/path/to/Android/Sdk
 ```
 
-执行完整检查：
+完整检查：
 
-```powershell
+```bash
+# Windows
 .\gradlew.bat :app:assembleDebug :app:assembleRelease :app:lintDebug :app:testDebugUnitTest
+
+# macOS / Linux
+./gradlew :app:assembleDebug :app:assembleRelease :app:lintDebug :app:testDebugUnitTest
 ```
 
-构建产物：
+产物：
 
 - `app/build/outputs/apk/debug/app-debug.apk`
 - `app/build/outputs/apk/release/app-release.apk`
 
-当前 Release 构建使用调试签名，仅用于模块分发和测试。更换签名会影响覆盖安装，请在自行构建时保持签名一致。
+当前 Release 使用调试签名，仅用于模块分发与测试。更换签名会影响覆盖安装，自行构建时请保持签名一致。
 
 ## 自动构建与发布
 
-[GitHub Actions 工作流](.github/workflows/build-release.yml)会执行以下任务：
+[GitHub Actions 工作流](.github/workflows/build-release.yml)会：
 
-- 推送到 `main` 或提交 Pull Request 时，自动构建 Debug/Release APK，并执行 Lint 和单元测试。
-- 推送与工程版本一致的标签（例如 `v1.0.1`）时，自动创建 GitHub Release 并上传 Release APK。
-- 标签版本必须与 `gradle.properties` 中的 `MODULE_VERSION_NAME` 一致，否则发布任务会失败。
+- 推送 `main` 或提交 PR 时：构建 Debug/Release APK，并跑 Lint 与单元测试
+- 推送与工程版本一致的标签（如 `v1.1.0`）时：创建 GitHub Release，上传 APK，并写入对应 `CHANGELOG.md` 段落
+- 标签必须与 `gradle.properties` 中的 `MODULE_VERSION_NAME` 一致，否则发布失败
 
 ## 项目结构
 
-- `ModuleMainKt.kt`：libxposed 模块入口和目标进程过滤。
-- `HostProfile.kt`：宿主版本信息、类、字段和方法签名探测。
-- `NagramXHooks.kt`：Hook 安装和生命周期接入。
-- `PlaybackCoordinator.kt`：菜单注入、播放器转移和计时器生命周期。
-- `HostBridge.kt`：宿主 ClassLoader 下的反射边界与错误处理。
+包名：`com.shitianyaa.nagramx.videotimer`
+
+| 文件 | 职责 |
+| --- | --- |
+| `ModuleMainKt.kt` | libxposed 模块入口与目标进程过滤 |
+| `HostProfile.kt` | 宿主版本与类 / 字段 / 方法签名探测 |
+| `NagramXHooks.kt` | Hook 安装与生命周期接入 |
+| `HostBridge.kt` | 宿主 ClassLoader 下的反射边界与错误处理 |
+| `VideoBackgroundSession.kt` | 后台播放会话、媒体通知与迷你播放器状态 |
+| `VideoSleepTimerSheet.kt` | 后台定时菜单与自定义时长滚轮 |
+| `PhotoViewerAgent.kt` | PhotoViewer / PiP 链路适配 |
+| `MainActivity.kt` | 模块状态页 |
+
+> 完整源码见 [`app/src/main/java/com/shitianyaa/nagramx/videotimer/`](app/src/main/java/com/shitianyaa/nagramx/videotimer/)。
+
+## 更新日志
+
+版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布包见 [Releases](https://github.com/shitianyaa/NagramXVideoTimerLSP/releases)。
 
 ## 免责声明
 
-本项目是非官方模块，与 NagramX、Telegram、LSPosed 项目没有隶属关系。模块会调用目标应用的内部实现，升级 NagramX 前建议保留可回退的安装包，并自行承担使用风险。
+本项目为非官方模块，与 NagramX、Telegram、LSPosed 均无隶属关系。模块会调用目标应用内部实现；升级 NagramX 前建议保留可回退安装包，并自行承担使用风险。
 
 ## 许可证
 
