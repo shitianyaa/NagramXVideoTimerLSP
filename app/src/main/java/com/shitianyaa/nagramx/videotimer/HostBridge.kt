@@ -80,6 +80,21 @@ internal class HostBridge(
         }
     }
 
+    fun newInstance(className: String, vararg args: Any?): Any? =
+        newInstance(loadClass(className), *args)
+
+    /** 写静态字段；宿主状态机需要直接改写少量私有静态标记时使用。 */
+    fun setStaticField(type: Class<*>?, name: String, value: Any?): Boolean {
+        val field = findField(type, name) ?: return false
+        return try {
+            field.set(null, value)
+            true
+        } catch (t: Throwable) {
+            logger("写入静态字段 ${field.declaringClass.name}.${field.name} 失败", t)
+            false
+        }
+    }
+
     fun getField(instance: Any?, name: String): Any? {
         if (instance == null) return null
         val field = findField(instance.javaClass, name) ?: return null

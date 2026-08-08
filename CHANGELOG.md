@@ -4,6 +4,25 @@
 
 ## [未发布]
 
+## [1.1.0] - 2026-08-08
+
+### 新增
+
+- 视频后台播放：退出全屏后音频继续，定时器在后台照常倒计时。
+- 通知栏播放控制与媒体会话，支持播放/暂停、上一个/下一个和进度显示。
+- 聊天页顶部迷你播放器，显示标题、剩余定时时长，点按可回到全屏。
+- 播放列表面板，可切换同一会话内的其他视频，条目补上视频缩略图。
+- 定时菜单在激活状态下显示剩余时长并高亮。
+
+### 修复
+
+- 滚动聊天列表或离开聊天页时不再中断后台视频播放。
+- 迷你播放器改为两行布局，剩余时长不再与标题重叠，并按秒刷新。
+- 自定义时长的小时与分钟滚轮恢复循环滚动。
+- 迷你播放器与播放列表里的视频名称、作者不再显示为文件名和「未知艺术家」：
+  名称按 文件名 → 说明文字首行 → 「视频」取值，作者按 转发来源 → 发送者 → 会话 解析。
+- 取消定时后迷你播放器不再停留在最后一次倒计时上。
+
 ## [1.0.1] - 2026-08-07
 
 ### 修复
@@ -24,6 +43,7 @@
 - 模块状态页、运行时签名探测、日志和安全停用机制。
 - GitHub Actions 自动构建、检查和标签发布流程。
 
-[未发布]: https://github.com/shitianyaa/NagramXVideoTimerLSP/compare/v1.0.1...HEAD
+[未发布]: https://github.com/shitianyaa/NagramXVideoTimerLSP/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/shitianyaa/NagramXVideoTimerLSP/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/shitianyaa/NagramXVideoTimerLSP/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/shitianyaa/NagramXVideoTimerLSP/releases/tag/v1.0.0
