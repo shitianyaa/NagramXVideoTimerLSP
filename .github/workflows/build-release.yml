@@ -119,17 +119,23 @@ jobs:
         run: rm -f "$RUNNER_TEMP/nagramx-videotimer-release.jks"
 
   release:
-    name: Publish GitHub Release
+    name: Publish official GitHub Release
     if: startsWith(github.ref, 'refs/tags/')
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: official-release
+      cancel-in-progress: false
     permissions:
-      contents: write
+      contents: read
 
     steps:
-      - name: Checkout
+      - name: Checkout release tag and main history
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Download Release APK
         uses: actions/download-artifact@v5
@@ -137,11 +143,56 @@ jobs:
           name: release-apk
           path: release
 
+      - name: Sync official source and release tag
+        shell: bash
+        env:
+          OFFICIAL_RELEASE_TOKEN: ${{ secrets.OFFICIAL_RELEASE_TOKEN }}
+          OFFICIAL_REPOSITORY: Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${OFFICIAL_RELEASE_TOKEN:-}" ]]; then
+            echo "OFFICIAL_RELEASE_TOKEN is required to publish to the official repository." >&2
+            exit 1
+          fi
+
+          git fetch --no-tags origin main:refs/remotes/origin/main
+
+          release_sha="$(git rev-parse "${GITHUB_REF_NAME}^{}")"
+          main_sha="$(git rev-parse refs/remotes/origin/main)"
+          if ! git merge-base --is-ancestor "$release_sha" "$main_sha"; then
+            echo "Release tag $GITHUB_REF_NAME must be reachable from main." >&2
+            exit 1
+          fi
+
+          auth_header="$(printf 'x-access-token:%s' "$OFFICIAL_RELEASE_TOKEN" | base64 | tr -d '\n')"
+          echo "::add-mask::$auth_header"
+          git remote add official "https://github.com/$OFFICIAL_REPOSITORY.git"
+
+          official_git() {
+            git -c http.extraheader="AUTHORIZATION: Basic $auth_header" "$@"
+          }
+
+          # Normal pushes preserve official history and reject an unexpected divergence.
+          official_git push official refs/remotes/origin/main:refs/heads/main
+
+          official_tag_sha="$(official_git ls-remote --tags official "refs/tags/${GITHUB_REF_NAME}^{}" | awk 'NR == 1 { print $1 }')"
+          if [[ -z "$official_tag_sha" ]]; then
+            official_tag_sha="$(official_git ls-remote --tags official "refs/tags/$GITHUB_REF_NAME" | awk 'NR == 1 { print $1 }')"
+          fi
+
+          if [[ -z "$official_tag_sha" ]]; then
+            official_git push official "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          elif [[ "$official_tag_sha" != "$release_sha" ]]; then
+            echo "Official tag $GITHUB_REF_NAME points to $official_tag_sha, expected $release_sha." >&2
+            exit 1
+          fi
+
       - name: Create or update GitHub Release
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.OFFICIAL_RELEASE_TOKEN }}
+          GH_REPO: Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer
         run: |
           set -euo pipefail
 

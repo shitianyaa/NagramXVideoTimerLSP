@@ -1,9 +1,9 @@
 # NagramX Video Timer LSP
 
 [![构建状态](https://img.shields.io/github/actions/workflow/status/shitianyaa/NagramXVideoTimerLSP/build-release.yml?event=push&style=for-the-badge&logo=githubactions&logoColor=white&label=Build)](https://github.com/shitianyaa/NagramXVideoTimerLSP/actions/workflows/build-release.yml)
-[![最新版本](https://img.shields.io/github/v/release/shitianyaa/NagramXVideoTimerLSP?style=for-the-badge&logo=github&logoColor=white&label=Release)](https://github.com/shitianyaa/NagramXVideoTimerLSP/releases/latest)
-[![下载量](https://img.shields.io/github/downloads/shitianyaa/NagramXVideoTimerLSP/total?style=for-the-badge&logo=download&logoColor=white&label=Downloads)](https://github.com/shitianyaa/NagramXVideoTimerLSP/releases)
-[![许可证](https://img.shields.io/github/license/shitianyaa/NagramXVideoTimerLSP?style=for-the-badge&logo=apache&logoColor=white&label=License)](LICENSE)
+[![最新版本](https://img.shields.io/github/v/release/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer?style=for-the-badge&logo=github&logoColor=white&label=Release)](https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/releases/latest)
+[![下载量](https://img.shields.io/github/downloads/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/total?style=for-the-badge&logo=download&logoColor=white&label=Downloads)](https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/releases)
+[![许可证](https://img.shields.io/github/license/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer?style=for-the-badge&logo=apache&logoColor=white&label=License)](LICENSE)
 
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](#兼容范围)
 [![NagramX](https://img.shields.io/badge/Target-nu.gpu.nagram-26A5E4?style=flat-square&logo=telegram&logoColor=white)](#兼容范围)
@@ -56,7 +56,7 @@
 
 ## 安装
 
-1. 从 [Releases](https://github.com/shitianyaa/NagramXVideoTimerLSP/releases/latest) 下载最新 APK 并安装
+1. 从 [官方 Releases](https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/releases/latest) 下载最新 APK 并安装
 2. 在 LSPosed 中启用 **NagramX Video Timer**
 3. 确认作用域为原版 NagramX（`nu.gpu.nagram`）
 4. 强制停止并重新启动 NagramX
@@ -138,12 +138,13 @@ sdk.dir=/path/to/Android/Sdk
 
 ## 自动构建与发布
 
-[GitHub Actions 工作流](.github/workflows/build-release.yml)会：
+[个人仓库的 GitHub Actions 工作流](.github/workflows/build-release.yml)会：
 
 - 向 `main` 提交 PR 或手动触发工作流时：构建 Debug/未签名 Release APK，并跑 Lint 与单元测试
-- 推送与工程版本完全一致的标签（如 `10102-1.1.2`）时：校验正式签名、创建 GitHub Release、上传 APK，并写入对应 `CHANGELOG.md` 段落
-- tag 必须等于 `MODULE_VERSION_CODE-MODULE_VERSION_NAME`；Release 标题为版本名，正文为对应的 Keep a Changelog 段落
-- tag 发布前需要在仓库 Secrets 配置 `RELEASE_KEYSTORE_BASE64`、`RELEASE_KEYSTORE_PASSWORD`、`RELEASE_KEY_ALIAS` 和 `RELEASE_KEY_PASSWORD`
+- 推送与工程版本完全一致的标签（如 `10102-1.1.2`）时：校验正式签名；仅在构建、Lint 和单元测试成功后，才同步官方仓库的 `main` 与同名 tag，并创建或更新官方 Release、上传 APK
+- tag 必须等于 `MODULE_VERSION_CODE-MODULE_VERSION_NAME`，且必须可从 `main` 到达；官方 Release 标题为版本名，正文为对应的 Keep a Changelog 段落
+- 个人仓库需要配置 `RELEASE_KEYSTORE_BASE64`、`RELEASE_KEYSTORE_PASSWORD`、`RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD` 和 `OFFICIAL_RELEASE_TOKEN`
+- `OFFICIAL_RELEASE_TOKEN` 必须是仅限 `Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer` 的细粒度 PAT，常规发布授予 `Contents: Read and write`；若要同步 `.github/workflows/` 的变更，还需授予 GitHub 工作流文件写入权限。官方仓库不保存签名材料，且其 Actions 保持禁用以避免重复构建
 
 ## 项目结构
 
@@ -164,7 +165,7 @@ sdk.dir=/path/to/Android/Sdk
 
 ## 更新日志
 
-版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布包见 [Releases](https://github.com/shitianyaa/NagramXVideoTimerLSP/releases)。
+版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布包见 [官方 Releases](https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/releases)。
 
 ## 免责声明
 
