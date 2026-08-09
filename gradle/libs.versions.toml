@@ -2,6 +2,7 @@
 agp = "9.2.1"
 xposed-api = "102.0.0"
 xposed-service = "102.0.0"
+junit4 = "4.13.2"
 
 [plugins]
 agp-app = { id = "com.android.application", version.ref = "agp" }
@@ -9,3 +10,4 @@ agp-app = { id = "com.android.application", version.ref = "agp" }
 [libraries]
 libxposed-api = { group = "io.github.libxposed", name = "api", version.ref = "xposed-api" }
 libxposed-service = { group = "io.github.libxposed", name = "service", version.ref = "xposed-service" }
+junit4 = { group = "junit", name = "junit", version.ref = "junit4" }

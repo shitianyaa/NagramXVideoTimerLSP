@@ -5,7 +5,7 @@ on:
     branches:
       - main
     tags:
-      - "v*"
+      - "*-*"
   pull_request:
     branches:
       - main
@@ -41,11 +41,36 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
-          version="$(sed -n 's/^MODULE_VERSION_NAME=//p' gradle.properties | tr -d '\r')"
-          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
-            echo "Tag $GITHUB_REF_NAME does not match module version v$version" >&2
+          set -euo pipefail
+          version_code="$(sed -n 's/^MODULE_VERSION_CODE=//p' gradle.properties | tr -d '\r')"
+          version_name="$(sed -n 's/^MODULE_VERSION_NAME=//p' gradle.properties | tr -d '\r')"
+          expected_tag="${version_code}-${version_name}"
+          if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match module version $expected_tag" >&2
             exit 1
           fi
+
+      - name: Prepare release signing material
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${RELEASE_KEYSTORE_BASE64:-}" || -z "${RELEASE_KEYSTORE_PASSWORD:-}" || \
+                -z "${RELEASE_KEY_ALIAS:-}" || -z "${RELEASE_KEY_PASSWORD:-}" ]]; then
+            echo "Release signing secrets are required for a tag build." >&2
+            exit 1
+          fi
+
+          keystore="$RUNNER_TEMP/nagramx-videotimer-release.jks"
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          keytool -list -keystore "$keystore" -storepass "$RELEASE_KEYSTORE_PASSWORD" \
+            -alias "$RELEASE_KEY_ALIAS" >/dev/null
+          echo "RELEASE_KEYSTORE_PATH=$keystore" >> "$GITHUB_ENV"
 
       - name: Make Gradle wrapper executable
         shell: bash
@@ -53,15 +78,25 @@ jobs:
 
       - name: Build, lint and test
         shell: bash
+        env:
+          REQUIRE_RELEASE_SIGNING: ${{ startsWith(github.ref, 'refs/tags/') && 'true' || 'false' }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew :app:assembleDebug :app:assembleRelease :app:lintDebug :app:testDebugUnitTest --stacktrace
 
       - name: Prepare APK artifacts
         shell: bash
         run: |
+          set -euo pipefail
           version="$(sed -n 's/^MODULE_VERSION_NAME=//p' gradle.properties | tr -d '\r')"
-          mkdir -p artifacts/debug artifacts/release
+          mkdir -p artifacts/debug
           cp app/build/outputs/apk/debug/app-debug.apk "artifacts/debug/NagramXVideoTimer-$version-debug.apk"
-          cp app/build/outputs/apk/release/app-release.apk "artifacts/release/NagramXVideoTimer-$version.apk"
+
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            mkdir -p artifacts/release
+            cp app/build/outputs/apk/release/app-release.apk "artifacts/release/NagramXVideoTimer-$version.apk"
+          fi
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v5
@@ -72,6 +107,7 @@ jobs:
           retention-days: 14
 
       - name: Upload Release APK
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v5
         with:
           name: release-apk
@@ -79,9 +115,14 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Remove temporary signing keystore
+        if: always() && startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/nagramx-videotimer-release.jks"
+
   release:
     name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/')
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -106,10 +147,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          version="${GITHUB_REF_NAME#v}"
+          version="$(sed -n 's/^MODULE_VERSION_NAME=//p' gradle.properties | tr -d '\r')"
           notes_file="$(mktemp)"
 
-          # Extract the Keep a Changelog section for this version.
           awk -v version="$version" '
             BEGIN {
               printing = 0
@@ -125,7 +165,6 @@ jobs:
             printing { print }
           ' CHANGELOG.md > "$notes_file"
 
-          # Drop leading blank lines so the release body starts with content.
           awk 'NF { seen = 1 } seen { print }' "$notes_file" > "${notes_file}.trim"
           mv "${notes_file}.trim" "$notes_file"
 
@@ -134,27 +173,14 @@ jobs:
             exit 1
           fi
 
-          # Keep a compare/tag link at the bottom, derived from the CHANGELOG footer when present.
-          previous="$(
-            sed -n "s|^\\[${version}\\]: .*/compare/\\(v[0-9][0-9.]*[0-9]\\)\\.\\.\\..*|\\1|p" CHANGELOG.md \
-              | head -n 1
-          )"
-          if [[ -n "$previous" ]]; then
-            printf '\n\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
-              "$GH_REPO" "$previous" "$GITHUB_REF_NAME" >> "$notes_file"
-          else
-            printf '\n\n**Full Changelog**: https://github.com/%s/releases/tag/%s\n' \
-              "$GH_REPO" "$GITHUB_REF_NAME" >> "$notes_file"
-          fi
-
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release edit "$GITHUB_REF_NAME" \
-              --title "NagramX Video Timer $GITHUB_REF_NAME" \
+              --title "$version" \
               --notes-file "$notes_file"
             gh release upload "$GITHUB_REF_NAME" release/*.apk --clobber
           else
             gh release create "$GITHUB_REF_NAME" release/*.apk \
               --verify-tag \
               --notes-file "$notes_file" \
-              --title "NagramX Video Timer $GITHUB_REF_NAME"
+              --title "$version"
           fi

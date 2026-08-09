@@ -4,5 +4,8 @@
 /.idea
 /captures
 /local.properties
+/keystore.properties
+/*.jks
+/*.keystore
 build
 /Progress

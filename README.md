@@ -13,6 +13,8 @@
 
 基于 [libxposed API](https://github.com/libxposed/api) 的 LSPosed 模块，为原版 NagramX 提供**后台视频播放**与**定时停止**入口。
 
+> **签名迁移**：`1.1.1` 起使用固定正式签名。已安装 `1.0.0` 至 `1.1.0` 的用户需要先卸载旧模块再安装 `1.1.1`；此后版本可正常覆盖升级。
+
 ## 功能
 
 ### 定时与后台
@@ -58,6 +60,8 @@
 2. 在 LSPosed 中启用 **NagramX Video Timer**
 3. 确认作用域为原版 NagramX（`nu.gpu.nagram`）
 4. 强制停止并重新启动 NagramX
+
+从 `1.0.0`、`1.0.1` 或 `1.1.0` 升级到 `1.1.1` 时，必须先卸载旧模块。这些历史 APK 的签名与 `1.1.1` 正式签名不同，Android 不允许直接覆盖安装。
 
 ## 使用
 
@@ -130,15 +134,16 @@ sdk.dir=/path/to/Android/Sdk
 - `app/build/outputs/apk/debug/app-debug.apk`
 - `app/build/outputs/apk/release/app-release.apk`
 
-当前 Release 使用调试签名，仅用于模块分发与测试。更换签名会影响覆盖安装，自行构建时请保持签名一致。
+正式 Release 使用固定 JKS 签名。将 [`keystore.properties.example`](keystore.properties.example) 复制为本地忽略的 `keystore.properties` 后，填写 keystore 路径、别名和密码；缺少签名配置时仍可构建未签名 release，但不能用于发布。不要提交 keystore、`keystore.properties` 或任何密码。
 
 ## 自动构建与发布
 
 [GitHub Actions 工作流](.github/workflows/build-release.yml)会：
 
-- 推送 `main` 或提交 PR 时：构建 Debug/Release APK，并跑 Lint 与单元测试
-- 推送与工程版本一致的标签（如 `v1.1.0`）时：创建 GitHub Release，上传 APK，并写入对应 `CHANGELOG.md` 段落
-- 标签必须与 `gradle.properties` 中的 `MODULE_VERSION_NAME` 一致，否则发布失败
+- 推送 `main` 或提交 PR 时：构建 Debug/未签名 Release APK，并跑 Lint 与单元测试
+- 推送与工程版本完全一致的标签（如 `10101-1.1.1`）时：校验正式签名、创建 GitHub Release、上传 APK，并写入对应 `CHANGELOG.md` 段落
+- tag 必须等于 `MODULE_VERSION_CODE-MODULE_VERSION_NAME`；Release 标题为版本名，正文为对应的 Keep a Changelog 段落
+- tag 发布前需要在仓库 Secrets 配置 `RELEASE_KEYSTORE_BASE64`、`RELEASE_KEYSTORE_PASSWORD`、`RELEASE_KEY_ALIAS` 和 `RELEASE_KEY_PASSWORD`
 
 ## 项目结构
 

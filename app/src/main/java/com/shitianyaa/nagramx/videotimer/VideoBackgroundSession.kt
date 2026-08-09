@@ -4,6 +4,25 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 
+/** 主线程延迟任务的最小边界，便于状态机在 JVM 单元测试中使用假调度器。 */
+internal interface DelayedTaskScheduler {
+    fun postDelayed(task: Runnable, delayMillis: Long)
+
+    fun removeCallbacks(task: Runnable)
+}
+
+private class MainThreadDelayedTaskScheduler : DelayedTaskScheduler {
+    private val handler = Handler(Looper.getMainLooper())
+
+    override fun postDelayed(task: Runnable, delayMillis: Long) {
+        handler.postDelayed(task, delayMillis)
+    }
+
+    override fun removeCallbacks(task: Runnable) {
+        handler.removeCallbacks(task)
+    }
+}
+
 /**
  * 定时关闭的状态机。
  *
@@ -15,9 +34,9 @@ import android.os.SystemClock
  */
 internal class VideoBackgroundSession(
     private val logger: (String, Throwable?) -> Unit,
+    private val elapsedRealtime: () -> Long = { SystemClock.elapsedRealtime() },
+    private val scheduler: DelayedTaskScheduler = MainThreadDelayedTaskScheduler(),
 ) {
-    private val handler = Handler(Looper.getMainLooper())
-
     var mode: Int = MODE_OFF
         private set
 
@@ -47,7 +66,7 @@ internal class VideoBackgroundSession(
     val remainingMinutes: Int
         get() {
             if (mode != MODE_DURATION) return 0
-            val remaining = deadline - SystemClock.elapsedRealtime()
+            val remaining = deadline - elapsedRealtime()
             if (remaining <= 0L) return 0
             return ((remaining + 59_999L) / 60_000L).toInt()
         }
@@ -56,7 +75,7 @@ internal class VideoBackgroundSession(
     val remainingSeconds: Int
         get() {
             if (mode != MODE_DURATION) return 0
-            val remaining = deadline - SystemClock.elapsedRealtime()
+            val remaining = deadline - elapsedRealtime()
             if (remaining <= 0L) return 0
             return ((remaining + 999L) / 1_000L).toInt()
         }
@@ -91,7 +110,7 @@ internal class VideoBackgroundSession(
             MODE_DURATION -> {
                 val bounded = minutes.coerceIn(1, MAX_MINUTES)
                 this.mode = MODE_DURATION
-                this.deadline = SystemClock.elapsedRealtime() + bounded * 60_000L
+                this.deadline = elapsedRealtime() + bounded * 60_000L
                 this.anchorMessageId = 0
                 this.lastPickedMinutes = bounded
             }
@@ -116,7 +135,7 @@ internal class VideoBackgroundSession(
         mode = MODE_OFF
         deadline = 0L
         anchorMessageId = 0
-        handler.removeCallbacks(tick)
+        scheduler.removeCallbacks(tick)
         // 心跳已经停了，不在这里主动刷一次的话，取消定时后迷你播放器会一直停在最后那个倒计时上。
         notifyTick()
     }
@@ -130,8 +149,8 @@ internal class VideoBackgroundSession(
     }
 
     private fun restartTicking() {
-        handler.removeCallbacks(tick)
-        handler.postDelayed(tick, TICK_MS)
+        scheduler.removeCallbacks(tick)
+        scheduler.postDelayed(tick, TICK_MS)
     }
 
     private val tick = object : Runnable {
@@ -153,7 +172,7 @@ internal class VideoBackgroundSession(
             }
 
             val expired = when (mode) {
-                MODE_DURATION -> SystemClock.elapsedRealtime() >= deadline
+                MODE_DURATION -> elapsedRealtime() >= deadline
                 MODE_AFTER_CURRENT -> result.endedCurrentItem(anchorMessageId)
                 else -> false
             }
@@ -172,7 +191,7 @@ internal class VideoBackgroundSession(
             } catch (t: Throwable) {
                 logger("定时器心跳回调失败", t)
             }
-            handler.postDelayed(this, TICK_MS)
+            scheduler.postDelayed(this, TICK_MS)
         }
     }
 
