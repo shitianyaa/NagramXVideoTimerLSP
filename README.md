@@ -141,7 +141,7 @@ sdk.dir=/path/to/Android/Sdk
 [GitHub Actions 工作流](.github/workflows/build-release.yml)会：
 
 - 推送 `main` 或提交 PR 时：构建 Debug/未签名 Release APK，并跑 Lint 与单元测试
-- 推送与工程版本完全一致的标签（如 `10101-1.1.1`）时：校验正式签名、创建 GitHub Release、上传 APK，并写入对应 `CHANGELOG.md` 段落
+- 推送与工程版本完全一致的标签（如 `10102-1.1.2`）时：校验正式签名、创建 GitHub Release、上传 APK，并写入对应 `CHANGELOG.md` 段落
 - tag 必须等于 `MODULE_VERSION_CODE-MODULE_VERSION_NAME`；Release 标题为版本名，正文为对应的 Keep a Changelog 段落
 - tag 发布前需要在仓库 Secrets 配置 `RELEASE_KEYSTORE_BASE64`、`RELEASE_KEYSTORE_PASSWORD`、`RELEASE_KEY_ALIAS` 和 `RELEASE_KEY_PASSWORD`
 

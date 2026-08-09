@@ -4,6 +4,12 @@
 
 ## [未发布]
 
+## [1.1.2] - 2026-08-09
+
+### 更改
+
+- 将启动器图标更新为黑白猫耳表盘：黑色背景、白色表盘和 `10:10` 指针，并提供 Android 13 单色版本。
+
 ## [1.1.1] - 2026-08-09
 
 ### 更改
@@ -55,7 +61,8 @@
 - 模块状态页、运行时签名探测、日志和安全停用机制。
 - GitHub Actions 自动构建、检查和标签发布流程。
 
-[未发布]: https://github.com/shitianyaa/NagramXVideoTimerLSP/compare/10101-1.1.1...HEAD
+[未发布]: https://github.com/shitianyaa/NagramXVideoTimerLSP/compare/10102-1.1.2...HEAD
+[1.1.2]: https://github.com/shitianyaa/NagramXVideoTimerLSP/compare/10101-1.1.1...10102-1.1.2
 [1.1.1]: https://github.com/shitianyaa/NagramXVideoTimerLSP/compare/v1.1.0...10101-1.1.1
 [1.1.0]: https://github.com/shitianyaa/NagramXVideoTimerLSP/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/shitianyaa/NagramXVideoTimerLSP/compare/v1.0.0...v1.0.1
