@@ -1,6 +1,6 @@
 # NagramX Video Timer LSP
 
-[![构建状态](https://img.shields.io/github/actions/workflow/status/shitianyaa/NagramXVideoTimerLSP/build-release.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=Build)](https://github.com/shitianyaa/NagramXVideoTimerLSP/actions/workflows/build-release.yml)
+[![构建状态](https://img.shields.io/github/actions/workflow/status/shitianyaa/NagramXVideoTimerLSP/build-release.yml?event=push&style=for-the-badge&logo=githubactions&logoColor=white&label=Build)](https://github.com/shitianyaa/NagramXVideoTimerLSP/actions/workflows/build-release.yml)
 [![最新版本](https://img.shields.io/github/v/release/shitianyaa/NagramXVideoTimerLSP?style=for-the-badge&logo=github&logoColor=white&label=Release)](https://github.com/shitianyaa/NagramXVideoTimerLSP/releases/latest)
 [![下载量](https://img.shields.io/github/downloads/shitianyaa/NagramXVideoTimerLSP/total?style=for-the-badge&logo=download&logoColor=white&label=Downloads)](https://github.com/shitianyaa/NagramXVideoTimerLSP/releases)
 [![许可证](https://img.shields.io/github/license/shitianyaa/NagramXVideoTimerLSP?style=for-the-badge&logo=apache&logoColor=white&label=License)](LICENSE)
@@ -140,7 +140,7 @@ sdk.dir=/path/to/Android/Sdk
 
 [GitHub Actions 工作流](.github/workflows/build-release.yml)会：
 
-- 推送 `main` 或提交 PR 时：构建 Debug/未签名 Release APK，并跑 Lint 与单元测试
+- 向 `main` 提交 PR 或手动触发工作流时：构建 Debug/未签名 Release APK，并跑 Lint 与单元测试
 - 推送与工程版本完全一致的标签（如 `10102-1.1.2`）时：校验正式签名、创建 GitHub Release、上传 APK，并写入对应 `CHANGELOG.md` 段落
 - tag 必须等于 `MODULE_VERSION_CODE-MODULE_VERSION_NAME`；Release 标题为版本名，正文为对应的 Keep a Changelog 段落
 - tag 发布前需要在仓库 Secrets 配置 `RELEASE_KEYSTORE_BASE64`、`RELEASE_KEYSTORE_PASSWORD`、`RELEASE_KEY_ALIAS` 和 `RELEASE_KEY_PASSWORD`
