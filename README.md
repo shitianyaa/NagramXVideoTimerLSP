@@ -69,7 +69,7 @@
 .\module\test\run_test.ps1
 ```
 
-Release 签名通过本地 `keystore.properties` 或 CI 的签名环境变量配置；签名材料不得提交到仓库。没有配置签名时，Gradle 仅生成未签名的 Release 包。标签构建要求正式签名，并运行 Java Hook 回归检查；发布标签格式为 `versionCode-versionName`。
+Release 签名通过本地 `keystore.properties` 或 CI 的签名环境变量配置；签名材料不得提交到仓库。没有配置签名时，Gradle 仅生成未签名的 Release 包。标签构建要求正式签名，并运行 Java Hook 回归检查；发布标签格式为 `versionCode-versionName`。推送该格式的标签后，CI 会把正式签名 APK 与该标签对应的 CHANGELOG 段落发布到个人仓库 Releases；官方模块仓库的源码同步与 Release 仍需手动执行。
 
 `build.ps1` / `build.sh` 用于本地快速制作测试包，使用独立开发签名，不能作为正式更新包覆盖安装。PowerShell 脚本可通过 `BT_W`、`AJ_W`、`JDK_W` 指定 Android Build Tools、android.jar 和 JDK bin 路径；默认路径沿用本机开发环境。
 
@@ -77,7 +77,7 @@ Release 签名通过本地 `keystore.properties` 或 CI 的签名环境变量配
 
 ## 更新与支持
 
-- 版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布包见 [官方 Releases](https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/releases)。
+- 版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布包见 [官方 Releases](https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/releases)；个人仓库的 [Releases](https://github.com/shitianyaa/NagramXVideoTimerLSP/releases) 由标签 CI 自动发布同一份正式签名 APK。
 - 问题反馈请使用 [个人仓库 Issues](https://github.com/shitianyaa/NagramXVideoTimerLSP/issues)。
 
 ## 免责声明
