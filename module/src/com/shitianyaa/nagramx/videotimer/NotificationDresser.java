@@ -56,7 +56,7 @@ final class NotificationDresser {
     }
 
     String videoTitleFallback(Object messageObject, String hostResult) {
-        String caption = captionFirstLine(messageObject);
+        String caption = captionFirstLine(host, messageObject);
         if (caption != null && !caption.trim().isEmpty()) {
             return caption;
         }
@@ -126,8 +126,9 @@ final class NotificationDresser {
         return false;
     }
 
-    private String captionFirstLine(Object messageObject) {
+    static String captionFirstLine(HostProfile host, Object messageObject) {
         if (messageObject == null) return null;
+        HostBridge bridge = host.bridge;
         Object capObj = bridge.getField(messageObject, host.message.captionField);
         if (capObj instanceof CharSequence) {
             String text = capObj.toString().trim();

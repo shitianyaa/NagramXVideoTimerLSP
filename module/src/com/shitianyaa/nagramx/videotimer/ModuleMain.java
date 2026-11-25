@@ -18,7 +18,7 @@ public class ModuleMain extends XposedModule {
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
         Xp.bind(this);
-        isMainProcess = HostProfile.TARGET_PACKAGE.equals(param.getProcessName());
+        isMainProcess = HostProfile.isSupportedPackage(param.getProcessName());
         Xp.log("模块已加载：process=" + param.getProcessName() +
                 ", framework=" + getFrameworkName() + "/" + getFrameworkVersionCode() +
                 ", api=" + getApiVersion());
@@ -28,17 +28,19 @@ public class ModuleMain extends XposedModule {
     public void onPackageReady(PackageReadyParam param) {
         Xp.bind(this);
         if (!isMainProcess || hooksInstalled || !param.isFirstPackage() ||
-                !HostProfile.TARGET_PACKAGE.equals(param.getPackageName())) {
+                !HostProfile.isSupportedPackage(param.getPackageName())) {
             return;
         }
 
         try {
-            HostProfile profile = HostProfile.discover(param.getClassLoader(), (msg, t) -> Xp.log(msg, t));
+            HostProfile profile = HostProfile.discover(param.getPackageName(), param.getClassLoader(), (msg, t) -> Xp.log(msg, t));
             if (profile == null) return;
+            Xp.log("宿主：" + HostProfile.hostDisplayName(param.getPackageName()) +
+                    " (" + param.getPackageName() + ")");
             new NagramXHooks(this, profile).install();
             hooksInstalled = true;
         } catch (Throwable t) {
-            Xp.log("安装 NagramX Hook 失败", t);
+            Xp.log("安装后台视频定时 Hook 失败", t);
         }
     }
 

@@ -3,6 +3,7 @@
 
     <queries>
         <package android:name="nu.gpu.nagram" />
+        <package android:name="top.nkbe.niagram" />
     </queries>
 
     <application

@@ -25,10 +25,10 @@ final class NagramXHooks {
     private final HostBridge.Logger logger;
 
     private final VideoBackgroundSession session;
+    private final ListenVideoAgent listen;
     private final HostTheme theme;
     private final HostStrings strings;
     private final MediaControllerAgent media;
-    private final VideoSleepTimerSheet sheet;
     private final PhotoViewerAgent photo;
     private final NotificationDresser notification;
     private final PlayerUiAgent playerUi;
@@ -55,15 +55,25 @@ final class NagramXHooks {
         this.theme = new HostTheme(host.bridge, logger);
         this.strings = new HostStrings(host.bridge, logger);
         this.media = new MediaControllerAgent(host, session, logger);
-        this.sheet = new VideoSleepTimerSheet(host, theme, strings, logger);
         this.playerUi = new PlayerUiAgent(host, session, strings, logger);
-        this.photo = new PhotoViewerAgent(host, media, session, theme, strings, sheet, playerUi, logger);
+        this.photo = new PhotoViewerAgent(host, media, session, strings, playerUi, logger);
         this.notification = new NotificationDresser(host, session, strings, logger);
+        this.listen = new ListenVideoAgent(host, media, session, theme, strings, photo, playerUi, logger);
+        this.photo.setListenVideo(listen);
     }
 
     void install() {
         if (host.hasCompleteNativeTimerUi()) {
-            Xp.log("宿主已自带后台定时播放，模块不重复注入：version=" + host.versionName + "/" + host.versionCode);
+            if (host.canInjectTimerMenu()) {
+                hookMenuInjection();
+                Method updateNativeTimer = host.bridge.findMethod(host.photoViewerClass, "updateVideoSleepTimerMenu", 0);
+                if (updateNativeTimer != null) intercept(updateNativeTimer, chain -> {
+                    Object result = chain.proceed();
+                    photo.hideNativeTimerItem(chain.getThisObject());
+                    return result;
+                });
+                hookMiniPlayer();
+            }
             return;
         }
         if (!host.canInjectTimerMenu()) {
@@ -86,6 +96,10 @@ final class NagramXHooks {
 
         hookMenuInjection();
         hookPhotoViewerClose();
+        if (host.niagram1322 && host.player.isPlaying != null) {
+            intercept(host.player.isPlaying, chain ->
+                    media.isTransferringViewerPlayer(chain.getThisObject()) ? true : chain.proceed());
+        }
         hookPhotoViewerState();
         hookServiceEligibility();
         hookRoundVideoOverlay();
@@ -135,8 +149,7 @@ final class NagramXHooks {
         {
             Object photoViewer = host.bridge.invoke(null, host.photo.getInstance);
             if (photoViewer != null) {
-                Object visibleVal = host.bridge.invoke(photoViewer, host.photo.isVisible);
-                if (Boolean.TRUE.equals(visibleVal)) {
+                if (host.isPhotoVisible(photoViewer)) {
                     Object photoMessage = host.messageOf(photoViewer);
                     Object photoPlayer = host.playerOf(photoViewer);
                     if (photoMessage != null && host.isVideoMessage(photoMessage)) {
@@ -149,9 +162,8 @@ final class NagramXHooks {
                         reachedEnd = false;
                         Object isP = photoPlayer != null ? host.bridge.invoke(photoPlayer, host.player.isPlaying) : null;
                         isPlaying = Boolean.TRUE.equals(isP);
-                        Object stateObj = photoPlayer != null ? host.bridge.invoke(photoPlayer, host.player.getPlaybackState) : null;
-                        if (stateObj instanceof Number) {
-                            int state = ((Number) stateObj).intValue();
+                        int state = host.playbackStateOf(photoPlayer);
+                        if (state >= 0) {
                             isPlaying = isPlaying && state == MediaControllerAgent.EXO_STATE_READY;
                             reachedEnd = state == MediaControllerAgent.EXO_STATE_ENDED;
                         }
@@ -170,8 +182,7 @@ final class NagramXHooks {
         }
         Object photoViewer = host.bridge.invoke(null, host.photo.getInstance);
         if (photoViewer != null) {
-            Object visibleVal = host.bridge.invoke(photoViewer, host.photo.isVisible);
-            if (Boolean.TRUE.equals(visibleVal)) {
+            if (host.isPhotoVisible(photoViewer)) {
                 Method pauseMethod = host.photo.pauseVideoOrWeb;
                 if (pauseMethod != null) {
                     host.bridge.invoke(photoViewer, pauseMethod);
@@ -212,7 +223,7 @@ final class NagramXHooks {
         if (closePhoto == null) return;
         intercept(closePhoto, chain -> {
             Object viewer = chain.getThisObject();
-            if (viewer != null && session.isActive()) {
+            if (viewer != null && session.isActive() && !listen.isClosingViewer(viewer)) {
                 photo.preservePlayerOnClose(viewer);
             }
             return chain.proceed();
@@ -242,7 +253,7 @@ final class NagramXHooks {
         }
         // checkProgress finishes asynchronously and may overwrite the paused icon
         // after updatePlayerState. Reconcile at drawing, using the real player state.
-        Method drawProgress = host.bridge.findMethod(host.photoViewerClass, "drawProgress", 5);
+        Method drawProgress = host.bridge.findMethod(host.photoViewerClass, host.niagram1322 ? "K6" : "drawProgress", 5);
         if (drawProgress != null) {
             intercept(drawProgress, chain -> {
                 if (session.isActive() && host.isVideoMessage(host.messageOf(chain.getThisObject()))) {
@@ -256,7 +267,7 @@ final class NagramXHooks {
         intercept(updateState, chain -> {
             Object result = chain.proceed();
             Object viewer = chain.getThisObject();
-            if (viewer != null) {
+            if (viewer != null && session.isActive()) {
                 photo.ensurePausePlayButtonVisible(viewer);
             }
             return result;
@@ -297,7 +308,8 @@ final class NagramXHooks {
             });
         }
 
-        Method show = host.bridge.findMethod(host.pipRoundVideoViewClass, "show", 2);
+        Method show = host.bridge.findMethod(host.pipRoundVideoViewClass, host.niagram1322 ? "q" : "show", 2,
+                m -> m.getParameterTypes()[1] == Runnable.class && m.getReturnType() == void.class);
         if (show != null) {
             Xp.hook(show, ExceptionMode.PASSTHROUGH, chain -> {
                 if (session.isBackgroundActive()) {
@@ -312,6 +324,14 @@ final class NagramXHooks {
     private void hookPlaylistPreservation() {
         for (Method skip : new Method[]{host.media.playNextMessage, host.media.playPreviousMessage}) {
             if (skip == null) continue;
+            if (host.niagram1322) {
+                intercept(skip, chain -> {
+                    if (listen.current() == null) return chain.proceed();
+                    listen.skip(skip == host.media.playNextMessage);
+                    return null;
+                });
+                continue;
+            }
             intercept(skip, chain -> {
                 if (!session.isBackgroundActive() || !host.isVideoMessage(media.playingMessage())) return chain.proceed();
                 Object list = host.bridge.getField(chain.getThisObject(), host.media.playlistField);
@@ -325,7 +345,7 @@ final class NagramXHooks {
         }
         Method method = host.media.playMessage;
         Field playlistField = host.media.playlistField;
-        if (method == null || playlistField == null) return;
+        if (method == null || (playlistField == null && !host.niagram1322)) return;
 
         intercept(method, chain -> {
             if (!session.isActive()) {
@@ -335,6 +355,10 @@ final class NagramXHooks {
             Object[] args = chain.getArgs().toArray();
             Object target = (args.length > 0) ? args[0] : null;
             if (!host.isVideoMessage(target)) {
+                session.markBackgroundActive(false);
+                return chain.proceed();
+            }
+            if (host.niagram1322 && !listen.owns(target)) {
                 session.markBackgroundActive(false);
                 return chain.proceed();
             }
@@ -351,7 +375,7 @@ final class NagramXHooks {
             changingTrack.set(changingTrack.get() + 1);
             Object result;
             try {
-                result = MessageIdentityMask.around(
+                result = host.niagram1322 ? chain.proceed() : MessageIdentityMask.around(
                         MessageIdentityMask.Spec.asMusic(target),
                         (MessageIdentityMask.Action<Object>) chain::proceed
                 );
@@ -359,6 +383,7 @@ final class NagramXHooks {
                 changingTrack.set(changingTrack.get() - 1);
             }
             if (Boolean.TRUE.equals(result)) {
+                if (host.niagram1322 && listen.owns(target)) playerUi.notifyPlaybackStarted();
                 if (snapshot != null && !snapshot.isEmpty()) {
                     media.applyPlaylist(chain.getThisObject(), snapshot, target);
                 }
@@ -429,12 +454,14 @@ final class NagramXHooks {
             Object[] args = chain.getArgs().toArray();
             boolean stopService = (args.length > 1 && Boolean.TRUE.equals(args[1]));
             boolean transferToPhotoViewer = (args.length > 3 && Boolean.TRUE.equals(args[3]));
-            if (session.isBackgroundActive() && suppressCleanup.get() > 0 &&
-                    changingTrack.get() == 0 && !transferToPhotoViewer) {
+            boolean switching = changingTrack.get() > 0;
+            if (session.isBackgroundActive() && !transferToPhotoViewer &&
+                    ((suppressCleanup.get() > 0 && (!switching || stopService))
+                    || (host.niagram1322 && switching && stopService && isChatTextureCleanup()))) {
                 Xp.log("跳过 ChatActivity 对后台视频的清理");
                 return null;
             }
-            if (changingTrack.get() > 0 && !transferToPhotoViewer) {
+            if (switching && !transferToPhotoViewer) {
                 return chain.proceed();
             }
             if (session.isBackgroundActive() && stopService && !transferToPhotoViewer) {
@@ -446,6 +473,17 @@ final class NagramXHooks {
             }
             return chain.proceed();
         });
+    }
+
+    private boolean isChatTextureCleanup() {
+        // ART can inline the chat method and bypass its hook during a playback notification.
+        Method update = host.playerUi.updateTextureViewPosition;
+        if (update == null) return false;
+        String owner = update.getDeclaringClass().getName();
+        for (StackTraceElement frame : Thread.currentThread().getStackTrace()) {
+            if (owner.equals(frame.getClassName()) && update.getName().equals(frame.getMethodName())) return true;
+        }
+        return false;
     }
 
     private void hookStrayViewerCallbacks() {
@@ -528,6 +566,11 @@ final class NagramXHooks {
         if (host.message.isVideo != null) {
             intercept(host.message.isVideo, chain -> {
                 Boolean spoofed = MessageIdentityMask.resolve(chain.getThisObject(), MessageIdentityMask.Kind.VIDEO);
+                return spoofed != null ? spoofed : chain.proceed();
+            });
+        } else if (host.niagram1322 && host.message.isVideoMessageStatic != null) {
+            intercept(host.message.isVideoMessageStatic, chain -> {
+                Boolean spoofed = MessageIdentityMask.resolve(chain.getArg(0), MessageIdentityMask.Kind.VIDEO);
                 return spoofed != null ? spoofed : chain.proceed();
             });
         } else {
@@ -754,13 +797,22 @@ final class NagramXHooks {
             });
         }
         if (ui.contextViewUpdatePlaybackButton != null) {
-            intercept(ui.contextViewUpdatePlaybackButton, chain -> playerUi.wrapContextView(chain::proceed));
+            intercept(ui.contextViewUpdatePlaybackButton, chain -> playerUi.withVideoSpeed(chain.getThisObject(),
+                    () -> playerUi.wrapContextView(chain::proceed)));
+        }
+        for (Method callback : ui.contextViewSpeedCallbacks) {
+            intercept(callback, chain -> playerUi.withVideoSpeed(chain.getThisObject(), chain::proceed));
         }
 
+        if (ui.contextViewClick != null) {
+            intercept(ui.contextViewClick, chain ->
+                    listen.openFromMiniPlayer(chain.getThisObject()) ? null : chain.proceed());
+        }
         for (Method method : ui.contextViewClickLambdas) {
             intercept(method, chain -> {
                 if (!chain.getArgs().isEmpty() && chain.getArg(0) == chain.getThisObject() &&
-                        playerUi.openCurrentVideo(chain.getThisObject())) return null;
+                        (listen.openFromMiniPlayer(chain.getThisObject()) ||
+                                (!host.hasCompleteNativeTimerUi() && playerUi.openCurrentVideo(chain.getThisObject())))) return null;
                 return playerUi.wrapContextView(chain::proceed);
             });
         }
@@ -829,12 +881,15 @@ final class NagramXHooks {
             Xp.log("找不到 ChatActivity.openPhotoViewerForMessage，消息页切换保护不可用");
         }
 
-        Method[] cleans = new Method[]{ui.onRemoveFromParent, ui.updateTextureViewPosition};
+        Method[] cleans = new Method[]{ui.onRemoveFromParent, ui.updateTextureViewPosition, ui.updateMessagesVisiblePart};
         for (Method method : cleans) {
             if (method != null) {
                 intercept(method, chain -> {
                     suppressCleanup.set(suppressCleanup.get() + 1);
                     try {
+                        if (method == ui.updateMessagesVisiblePart && session.isBackgroundActive()) {
+                            return playerUi.wrapChatScroll(chain::proceed);
+                        }
                         return chain.proceed();
                     } finally {
                         suppressCleanup.set(suppressCleanup.get() - 1);
@@ -843,15 +898,7 @@ final class NagramXHooks {
             }
         }
 
-        if (ui.updateMessagesVisiblePart != null) {
-            intercept(ui.updateMessagesVisiblePart, chain -> {
-                if (session.isBackgroundActive()) {
-                    return playerUi.wrapChatScroll(chain::proceed);
-                } else {
-                    return chain.proceed();
-                }
-            });
-        } else {
+        if (ui.updateMessagesVisiblePart == null) {
             Xp.log("找不到 ChatActivity.updateMessagesVisiblePart，滚动时可能中断后台播放");
         }
     }
@@ -911,6 +958,7 @@ final class NagramXHooks {
 
     private void endSession() {
         session.end();
+        listen.endSession();
         photo.onBackgroundSessionEnded();
         playerUi.onSessionEnded();
         NotificationDresser.MusicServiceHandle.current = null;

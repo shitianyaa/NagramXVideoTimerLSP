@@ -80,6 +80,19 @@ final class HostTheme {
         return null;
     }
 
+    int color(String name, int fallback) {
+        Integer key = keyOf(name);
+        if (key == null) return fallback;
+        Object actual = bridge.invokeStatic(themeClass, "getColor", key);
+        return actual instanceof Number ? ((Number) actual).intValue() : fallback;
+    }
+
+    int activeColor(String name) {
+        Integer key = keyOf(name);
+        Object actual = key == null ? null : bridge.invokeStatic(themeClass, "getColor", key);
+        return actual instanceof Number ? ((Number) actual).intValue() : color(name);
+    }
+
     int color(String name) {
         Integer cached = colorCache.get(name);
         if (cached != null) return cached;

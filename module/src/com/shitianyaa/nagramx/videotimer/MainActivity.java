@@ -37,34 +37,40 @@ public class MainActivity extends Activity {
     }
 
     private String targetStatus() {
-        PackageInfo packageInfo = getTargetPackageInfo();
-        if (packageInfo == null) {
-            return "未检测到 " + HostProfile.TARGET_PACKAGE;
+        StringBuilder sb = new StringBuilder();
+        for (String packageName : HostProfile.SUPPORTED_PACKAGES) {
+            PackageInfo packageInfo = getTargetPackageInfo(packageName);
+            if (packageInfo == null) {
+                sb.append("未检测到 ").append(packageName).append('\n');
+                continue;
+            }
+            long versionCode;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                versionCode = packageInfo.getLongVersionCode();
+            } else {
+                versionCode = packageInfo.versionCode;
+            }
+            String versionName = packageInfo.versionName != null ? packageInfo.versionName : "unknown";
+            sb.append(String.format("目标：%s %s %s (%d)\n",
+                    HostProfile.hostDisplayName(packageName),
+                    packageName,
+                    versionName,
+                    versionCode));
         }
-        long versionCode;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            versionCode = packageInfo.getLongVersionCode();
-        } else {
-            versionCode = packageInfo.versionCode;
-        }
-        String versionName = packageInfo.versionName != null ? packageInfo.versionName : "unknown";
-        return String.format(
-                "目标：%s %s (%d)\n已验证宿主：12.9.2-4335a2e (1260)；其他版本需测试",
-                HostProfile.TARGET_PACKAGE,
-                versionName,
-                versionCode
-        );
+        sb.append("\n已验证宿主：NagramX 12.9.2-4335a2e (1260)；NiagramX 待真机验证\n")
+                .append("不限制 versionCode，运行时按类和方法签名探测兼容性");
+        return sb.toString();
     }
 
-    private PackageInfo getTargetPackageInfo() {
+    private PackageInfo getTargetPackageInfo(String packageName) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 return getPackageManager().getPackageInfo(
-                        HostProfile.TARGET_PACKAGE,
+                        packageName,
                         PackageManager.PackageInfoFlags.of(0)
                 );
             } else {
-                return getPackageManager().getPackageInfo(HostProfile.TARGET_PACKAGE, 0);
+                return getPackageManager().getPackageInfo(packageName, 0);
             }
         } catch (PackageManager.NameNotFoundException e) {
             return null;

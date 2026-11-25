@@ -7,10 +7,12 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.TextView;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -61,13 +63,17 @@ final class PlayerUiAgent {
         if (!session.isBackgroundActive() && !session.isArmed()) return null;
         Object controller = host.mediaController();
         if (controller == null) return null;
-        Object playing = bridge.invoke(controller, host.media.getPlayingMessageObject);
+        Object playing = host.media.getPlayingMessageObject == null
+                ? bridge.getField(controller, host.media.playingMessageField)
+                : bridge.invoke(controller, host.media.getPlayingMessageObject);
         if (playing == null) return null;
         return host.isVideoMessage(playing) ? playing : null;
     }
 
     private <T> T asMusicHidingVideo(MessageIdentityMask.Action<T> body) {
-        return MessageIdentityMask.around(MessageIdentityMask.Spec.asMusicHidingVideo(backgroundVideo()), body);
+        Object current = backgroundVideo();
+        Object owner = host.niagram1322 ? bridge.getField(current, host.message.messageOwnerField) : null;
+        return MessageIdentityMask.around(MessageIdentityMask.Spec.asMusicHidingVideo(current, owner), body);
     }
 
     @SuppressWarnings("unchecked")
@@ -102,11 +108,28 @@ final class PlayerUiAgent {
         return asMusicHidingVideo(body);
     }
 
-    boolean openCurrentVideo(Object view) {
+    private boolean isAudioContextView(Object view) {
         if (view == null || Boolean.TRUE.equals(bridge.getField(view, ui.isLocationField))) return false;
         Object style = bridge.getField(view, ui.currentStyleField);
-        if (!(style instanceof Number) || ((Number) style).intValue() != ui.styleAudioPlayer) return false;
-        return openInFullscreen(backgroundVideo());
+        return style instanceof Number && ((Number) style).intValue() == ui.styleAudioPlayer;
+    }
+
+    boolean openCurrentVideo(Object view) {
+        return isAudioContextView(view) && openInFullscreen(backgroundVideo());
+    }
+
+    <T> T withVideoSpeed(Object view, MessageIdentityMask.Action<T> action) throws Throwable {
+        if (!Boolean.TRUE.equals(bridge.getField(view, ui.contextViewIsMusicField))
+                || !session.isBackgroundActive() || !isAudioContextView(view) || backgroundVideo() == null
+                || !bridge.setField(view, ui.contextViewIsMusicField, false)) {
+            return action.run();
+        }
+        // Keep the host's audio style outside speed callbacks.
+        try {
+            return action.run();
+        } finally {
+            bridge.setField(view, ui.contextViewIsMusicField, true);
+        }
     }
 
     List<Object> playlistFor(Object current) {
@@ -118,41 +141,14 @@ final class PlayerUiAgent {
         return Collections.singletonList(current);
     }
 
-    boolean selectVideo(Object viewer, Activity activity, Object target) {
-        if (host.messageIdOf(host.messageOf(viewer)) == host.messageIdOf(target)
-                && host.dialogIdOf(host.messageOf(viewer)) == host.dialogIdOf(target)) return true;
-        Object images = bridge.getField(viewer, host.photo.imagesArrField);
-        if (images instanceof List && host.photo.setImageIndex != null) {
-            List<?> items = (List<?>) images;
-            for (int index = 0; index < items.size(); index++) {
-                Object item = items.get(index);
-                if (host.messageIdOf(item) == host.messageIdOf(target) && host.dialogIdOf(item) == host.dialogIdOf(target)) {
-                    bridge.invoke(viewer, host.photo.setImageIndex, index);
-                    boolean selected = host.messageIdOf(host.messageOf(viewer)) == host.messageIdOf(target)
-                            && host.dialogIdOf(host.messageOf(viewer)) == host.dialogIdOf(target);
-                    if (!selected) return false;
-                    bridge.setField(viewer, host.photo.manuallyPausedField, false);
-                    if (host.playerOf(viewer) != null) bridge.invoke(viewer, host.photo.playVideoOrWeb);
-                    else if (host.photo.onActionClick != null) bridge.invoke(viewer, host.photo.onActionClick, false);
-                    else {
-                        logger.log("宿主缺少视频加载入口", null);
-                        return false;
-                    }
-                    logger.log("视频列表切换：message=" + host.messageIdOf(target) + ", timer=" + session.isArmed(), null);
-                    return true;
-                }
-            }
-        }
-        logger.log("所选视频不在当前 PhotoViewer 列表中，保留播放页", null);
-        return false;
-    }
-
     <T> T wrapPlaylist(MessageIdentityMask.Action<T> body) {
         return asMusicForPlaylist(body);
     }
 
     <T> T wrapChatScroll(MessageIdentityMask.Action<T> body) {
-        return MessageIdentityMask.around(MessageIdentityMask.Spec.hidingVideo(backgroundVideo()), body);
+        Object current = backgroundVideo();
+        Object owner = host.niagram1322 ? bridge.getField(current, host.message.messageOwnerField) : null;
+        return MessageIdentityMask.around(MessageIdentityMask.Spec.hidingVideo(current, owner), body);
     }
 
     void rememberContextView(Object view) {
@@ -171,11 +167,17 @@ final class PlayerUiAgent {
     }
 
     void refreshCountdown(boolean relayout) {
+        if (ui.miniPlayerSetText != null) {
+            mainHandler.post(() -> renderCountdown(relayout));
+        }
+    }
+
+    private void renderCountdown(boolean relayout) {
         Context context = host.getAppContext();
         if (context == null) return;
-        boolean background = session.isBackgroundActive() && backgroundVideo() != null;
+        Object message = session.isBackgroundActive() ? backgroundVideo() : null;
         String text = null;
-        if (background) {
+        if (message != null) {
             int mode = session.getMode();
             if (mode == VideoBackgroundSession.MODE_AFTER_CURRENT) {
                 lastCountdownSecond = -1;
@@ -199,7 +201,7 @@ final class PlayerUiAgent {
             views = new ArrayList<>(contextViews.keySet());
         }
         for (Object view : views) {
-            applySubtitle(view, text, relayout);
+            applySubtitle(view, message, text, relayout);
         }
     }
 
@@ -217,7 +219,7 @@ final class PlayerUiAgent {
         }
     }
 
-    private void applySubtitle(Object view, String text, boolean relayout) {
+    private void applySubtitle(Object view, Object message, String text, boolean relayout) {
         boolean twoLine = text != null;
         boolean wasTwoLine;
         synchronized (contextViews) {
@@ -225,6 +227,15 @@ final class PlayerUiAgent {
             wasTwoLine = b != null && b;
         }
         if (!twoLine && !wasTwoLine) return;
+        if (!(view instanceof View) || !isAudioContextView(view)) {
+            if (wasTwoLine) {
+                contextViews.replace(view, Boolean.FALSE);
+            }
+            return;
+        }
+        if (twoLine && host.niagram1322 && bridge.getField(view, ui.contextViewMessageField) != message) {
+            return;
+        }
 
         Object subObj = bridge.getField(view, ui.subtitleTextViewField);
         if (!(subObj instanceof View)) return;
@@ -233,44 +244,44 @@ final class PlayerUiAgent {
         Object titleObj = bridge.getField(view, ui.titleTextViewField);
         View title = (titleObj instanceof View) ? (View) titleObj : null;
 
-        mainHandler.post(() -> {
-            try {
-                Object styleVal = bridge.getField(view, ui.currentStyleField);
-                if (styleVal instanceof Number) {
-                    if (((Number) styleVal).intValue() != ui.styleAudioPlayer) return;
-                }
-                if (!(view instanceof View)) return;
-                Context context = ((View) view).getContext();
-                if (context == null) return;
-
-                Object sideVal = bridge.getField(view, ui.isSideMenuedField);
-                boolean sideMenued = Boolean.TRUE.equals(sideVal);
-                int rightMargin = 36 + (sideMenued ? 64 : 0);
-
-                if (twoLine) {
-                    if (relayout || !wasTwoLine) {
-                        if (title != null) {
-                            frame(context, title, 20, 37, 0, rightMargin);
-                        }
-                        frame(context, subtitle, 18, 37, 18, rightMargin);
-                    }
-                    bridge.invokeNamed(subtitle, "setText", text, false);
-                    subtitle.setVisibility(View.VISIBLE);
-                } else {
+        try {
+            Context context = ((View) view).getContext();
+            boolean sideMenued = Boolean.TRUE.equals(bridge.getField(view, ui.isSideMenuedField));
+            int rightMargin = 36 + (sideMenued ? 64 : 0);
+            if (twoLine) {
+                if (relayout || !wasTwoLine) {
                     if (title != null) {
-                        frame(context, title, 36, 37, 0, rightMargin);
+                        frame(context, title, 20, 37, 0, rightMargin);
+                        if (host.niagram1322) {
+                            updateVideoTitle(context, title, message);
+                        }
                     }
-                    subtitle.setVisibility(View.GONE);
+                    int subtitleRightMargin = rightMargin + (host.niagram1322 ? 44 : 0);
+                    frame(context, subtitle, 18, 37, 18, subtitleRightMargin);
                 }
-                synchronized (contextViews) {
-                    if (contextViews.containsKey(view)) {
-                        contextViews.put(view, twoLine);
-                    }
+                bridge.invoke(subtitle, ui.miniPlayerSetText, text, false);
+                subtitle.setVisibility(View.VISIBLE);
+            } else {
+                if (title != null) {
+                    frame(context, title, 36, 37, 0, rightMargin);
                 }
-            } catch (Throwable t) {
-                logger.log("刷新迷你播放器副标题失败", t);
+                subtitle.setVisibility(View.GONE);
             }
-        });
+            contextViews.replace(view, twoLine);
+        } catch (RuntimeException e) {
+            logger.log("刷新迷你播放器标题和倒计时失败", e);
+        }
+    }
+
+    private void updateVideoTitle(Context context, View title, Object message) {
+        String text = NotificationDresser.captionFirstLine(host, message);
+        if (text == null) {
+            text = strings.get(context, "AttachVideo") + " · " + host.messageIdOf(message);
+        }
+        Object label = bridge.invokeNamed(title, "getTextView");
+        if (!(label instanceof TextView) || !TextUtils.equals(text, ((TextView) label).getText())) {
+            bridge.invoke(title, ui.miniPlayerSetText, text, false);
+        }
     }
 
     @SuppressLint("RtlHardcoded")
@@ -316,6 +327,10 @@ final class PlayerUiAgent {
     }
 
     boolean openInFullscreen(Object cellOrTarget) {
+        return openInFullscreen(cellOrTarget, null);
+    }
+
+    boolean openInFullscreen(Object cellOrTarget, Runnable onOpened) {
         if (cellOrTarget == null) return false;
         Object target = cellOrTarget;
         if (ui.cellGetMessageObject != null && ui.cellGetMessageObject.getDeclaringClass().isInstance(cellOrTarget)) {
@@ -335,7 +350,9 @@ final class PlayerUiAgent {
 
         Object photoViewer = bridge.invoke(null, host.photo.getInstance);
         if (photoViewer == null) return false;
-        Object provider = bridge.newInstance("org.telegram.ui.PhotoViewer$EmptyPhotoViewerProvider");
+        if (onOpened != null && host.isPhotoVisible(photoViewer)) return false;
+        Object provider = bridge.newInstance(host.niagram1322
+                ? "org.telegram.ui.PhotoViewer$g" : "org.telegram.ui.PhotoViewer$EmptyPhotoViewerProvider");
         if (provider == null || host.photo.openPhoto == null || host.photo.setParentActivity == null ||
                 host.media.cleanupPlayer4 == null || host.media.playMessage == null) {
             logger.log("全屏转交所需的宿主接口不完整", null);
@@ -343,15 +360,16 @@ final class PlayerUiAgent {
         }
 
         Object alert = bridge.getStaticField(ui.alertInstanceField);
-        if (alert != null) {
+        if (onOpened == null && alert != null) {
             bridge.invokeNamed(alert, "dismiss");
         }
 
         final Object finalTarget = target;
-        mainHandler.postDelayed(() -> {
+        Runnable reopen = () -> {
             try {
                 if (!session.isBackgroundActive()) return;
-                Object playing = bridge.invoke(controller, host.media.getPlayingMessageObject);
+                MediaControllerAgent playback = new MediaControllerAgent(host, session, logger);
+                Object playing = playback.playingMessage();
                 boolean sameItem = playing != null && host.dialogIdOf(playing) == host.dialogIdOf(finalTarget) &&
                         host.messageIdOf(playing) == host.messageIdOf(finalTarget);
                 boolean paused = sameItem && Boolean.TRUE.equals(bridge.getField(controller, host.media.isPausedField));
@@ -366,6 +384,7 @@ final class PlayerUiAgent {
                     if (openPhoto(photoViewer, finalTarget, provider)) {
                         bridge.invoke(controller, host.media.cleanupPlayer4, true, true, false, false);
                         bridge.invoke(controller, host.media.resetGoingToShowMessageObject);
+                        if (onOpened != null) onOpened.run();
                     } else {
                         session.markBackgroundActive(true);
                         logger.log("所选视频打开失败，保留原后台播放器", null);
@@ -377,22 +396,31 @@ final class PlayerUiAgent {
                     logger.log("所选视频播放器尚未就绪，保留后台播放", null);
                     return;
                 }
+                long position = playback.positionMs();
+                if (host.niagram1322) session.markBackgroundActive(false);
                 bridge.invoke(controller, host.media.cleanupPlayer4, true, true, false, true);
                 if (openPhoto(photoViewer, finalTarget, provider) && (host.playerOf(photoViewer) == player ||
                         bridge.getField(photoViewer, "injectingVideoPlayer") == player)) {
                     // Original cleanupPlayer transfers the player but retains its
                     // reference for the surface handshake. Relinquish it after adoption.
                     if (host.playerOf(photoViewer) == player) bridge.setField(controller, host.media.videoPlayerField, null);
-                    if (paused) bridge.invoke(player, host.player.pause);
+                    restoreViewerPlayback(photoViewer, player, finalTarget, paused);
                     bridge.invoke(controller, host.media.resetGoingToShowMessageObject);
+                    if (onOpened != null) onOpened.run();
                 } else {
                     logger.log("宿主拒绝接入全屏播放器，恢复后台播放", null);
                     bridge.setField(photoViewer, "injectingVideoPlayer", null);
                     if (host.playerOf(photoViewer) == player) {
                         bridge.setField(photoViewer, host.photo.videoPlayerField, null);
                     }
-                    MediaControllerAgent recovery = new MediaControllerAgent(host, session, logger);
-                    recovery.startBackgroundPlayback(player, finalTarget, playlist, recovery.positionMs(), (p, m) -> {
+                    MediaControllerAgent recovery = playback;
+                    recovery.startBackgroundPlayback(player, finalTarget, playlist, position, (p, m) -> {
+                        if (host.niagram1322) {
+                            bridge.setField(photoViewer, host.photo.videoPlayerField, p);
+                            bridge.setField(photoViewer, host.photo.currentMessageField, m);
+                            recovery.invokeViewerTransfer(photoViewer, p);
+                            return bridge.getField(controller, host.media.videoPlayerField) == p;
+                        }
                         bridge.invoke(controller, host.media.injectVideoPlayer, p, m);
                         return bridge.getField(controller, host.media.videoPlayerField) == p;
                     });
@@ -402,8 +430,33 @@ final class PlayerUiAgent {
             } catch (Throwable t) {
                 logger.log("回到全屏失败", t);
             }
-        }, REOPEN_DELAY_MS);
+        };
+        if (onOpened == null) mainHandler.postDelayed(reopen, REOPEN_DELAY_MS);
+        else reopen.run();
         return true;
+    }
+
+    private void restoreViewerPlayback(Object viewer, Object player, Object target, boolean paused) {
+        if (host.playerOf(viewer) != player) {
+            mainHandler.postDelayed(() -> {
+                if (host.playerOf(viewer) == player && host.messageOf(viewer) == target) {
+                    restoreViewerPlayback(viewer, player, target, paused);
+                }
+            }, REOPEN_DELAY_MS);
+            return;
+        }
+        bridge.setField(viewer, host.photo.manuallyPausedField, paused);
+        if (paused) bridge.invoke(player, host.player.pause);
+        else if (host.niagram1322) bridge.invoke(player, host.player.play);
+        Method updateState = host.photo.updatePlayerState;
+        int state = host.playbackStateOf(player);
+        if (updateState != null && state >= 0) {
+            if (updateState.getParameterTypes()[0] == int.class) bridge.invoke(viewer, updateState, state, !paused);
+            else bridge.invoke(viewer, updateState, !paused, state);
+        }
+        bridge.setField(viewer, host.photo.manuallyPausedField, paused);
+        Object container = bridge.getField(viewer, "containerView");
+        if (container instanceof android.view.View) ((android.view.View) container).invalidate();
     }
 
     boolean jumpToMessageObject(Object messageObject) {
@@ -442,14 +495,16 @@ final class PlayerUiAgent {
     }
 
     private boolean openPhoto(Object photoViewer, Object message, Object provider) {
-        Object dialogIdVal = bridge.invoke(message, host.message.getDialogId);
-        long dialogId = (dialogIdVal instanceof Number) ? ((Number) dialogIdVal).longValue() : 0L;
+        long dialogId = host.dialogIdOf(message);
         Method opener = host.photo.openPhoto;
         if (opener == null || provider == null) {
             logger.log("找不到 PhotoViewer.openPhoto 兼容重载", null);
             return false;
         }
 
+        if (host.niagram1322) {
+            return Boolean.TRUE.equals(bridge.invoke(photoViewer, opener, message, null, dialogId, 0L, 0L, provider));
+        }
         Object[] args = new Object[]{message, dialogId, 0L, 0L, provider, Boolean.TRUE};
         if (host.photo.openPhotoList != null) {
             List<Object> items = playlistFor(message);

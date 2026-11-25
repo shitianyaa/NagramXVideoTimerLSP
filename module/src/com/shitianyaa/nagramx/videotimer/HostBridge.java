@@ -4,6 +4,8 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 宿主对象与类反射调用边界。
@@ -66,6 +68,94 @@ final class HostBridge {
         return findMethod(type, name, 0, null);
     }
 
+    /**
+     * 名字优先，形状回退。
+     *
+     * <p>原版 NagramX 保留成员名，直接按名命中；被 R8 改名（或成员被内联后
+     * 只剩同形状的其它方法）时，退化为按形状谓词定位，且仅当候选唯一才采用。</p>
+     */
+    Method findMethodOrShape(Class<?> type, String name, int parameterCount, MethodPredicate shape) {
+        Method byName = findMethod(type, name, parameterCount, shape);
+        if (byName != null) return byName;
+        return findUniqueByShape(type, name, shape);
+    }
+
+    /** 忽略方法名枚举全部候选（含父类）。 */
+    List<Method> findMethodsByShape(Class<?> type, MethodPredicate predicate) {
+        List<Method> out = new ArrayList<>();
+        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+            Method[] methods;
+            try {
+                methods = current.getDeclaredMethods();
+            } catch (Throwable t) {
+                logger.log("枚举 " + current.getName() + " 方法失败", t);
+                continue;
+            }
+            for (Method m : methods) {
+                if (predicate == null || predicate.test(m)) {
+                    out.add(m);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** 忽略方法名，仅当候选唯一时采用；候选不唯一时记录歧义并返回 null，不做猜测。 */
+    Method findUniqueByShape(Class<?> type, String label, MethodPredicate shape) {
+        if (type == null || shape == null) return null;
+        List<Method> hits = findMethodsByShape(type, shape);
+        if (hits.size() == 1) {
+            Method method = hits.get(0);
+            makeAccessible(method);
+            return method;
+        }
+        if (hits.size() > 1) {
+            StringBuilder sb = new StringBuilder();
+            int shown = Math.min(hits.size(), 6);
+            for (int i = 0; i < shown; i++) {
+                Method method = hits.get(i);
+                if (sb.length() > 0) sb.append(", ");
+                sb.append(method.getName()).append(descriptorOf(method));
+            }
+            if (hits.size() > shown) sb.append(", ...");
+            logger.log("形状定位 " + type.getName() + "." + label + " 命中 " + hits.size()
+                    + " 个候选，放弃：" + sb, null);
+        }
+        return null;
+    }
+
+    /** 按字段类型查找（用于被 R8 搬到默认包的内部类型做锚点）。 */
+    Field findFieldByType(Class<?> type, Class<?> fieldType) {
+        if (type == null || fieldType == null) return null;
+        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+            try {
+                for (Field f : current.getDeclaredFields()) {
+                    if (f.getType() == fieldType) {
+                        makeAccessible(f);
+                        return f;
+                    }
+                }
+            } catch (Throwable t) {
+                logger.log("枚举 " + current.getName() + " 字段失败", t);
+            }
+        }
+        return null;
+    }
+
+    /** 混淆名表未覆盖该版本时退回源码原名。 */
+    static String pickName(String obfuscated, String original) {
+        return obfuscated != null ? obfuscated : original;
+    }
+
+    static String descriptorOf(Method method) {        if (method == null) return "<null>";
+        StringBuilder sb = new StringBuilder("(");
+        for (Class<?> p : method.getParameterTypes()) {
+            sb.append(p.getSimpleName()).append(',');
+        }
+        sb.append(")->").append(method.getReturnType().getSimpleName());
+        return sb.toString();
+    }
+
     Method findMethod(Class<?> type, String name, Class<?>... parameterTypes) {
         int count = parameterTypes != null ? parameterTypes.length : 0;
         return findMethod(type, name, count, m -> {
@@ -76,6 +166,13 @@ final class HostBridge {
             }
             return true;
         });
+    }
+
+    /** 读取字段值，字段为 null 时返回 null。 */
+    Object getFieldOrDefault(Object instance, Field field, Object fallback) {
+        if (instance == null || field == null) return fallback;
+        Object value = getField(instance, field);
+        return value != null ? value : fallback;
     }
 
     Field findField(Class<?> type, String name) {

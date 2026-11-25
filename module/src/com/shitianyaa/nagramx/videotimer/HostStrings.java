@@ -21,6 +21,26 @@ final class HostStrings {
     private static final Map<String, String[]> FALLBACKS = new HashMap<>();
 
     static {
+        put("ListenVideo", "听视频", "Listen to video");
+        put("ListenVideoBack", "返回画面", "Watch video");
+        put("ListenVideoFailed", "暂时无法转入后台播放", "Could not start background playback");
+        put("ListenVideoPrevious", "上一个视频", "Previous video");
+        put("ListenVideoNext", "下一个视频", "Next video");
+        put("ListenVideoPlay", "播放", "Play");
+        put("ListenVideoPause", "暂停", "Pause");
+        put("ListenVideoSpeed", "播放速度", "Playback speed");
+        put("SpeedSlow", "慢", "Slow");
+        put("SpeedNormal", "正常", "Normal");
+        put("SpeedMedium", "稍快", "Medium");
+        put("SpeedFast", "快", "Fast");
+        put("SpeedVeryFast", "更快", "Very fast");
+        put("SpeedSuperFast", "非常快", "Super fast");
+        put("ListenVideoLoading", "正在加载…", "Loading…");
+        put("ListenVideoLoadRetry", "加载失败，点此重试", "Could not load. Tap to retry");
+        put("ListenVideoTimerRemaining", "定时关闭 %1$s", "Sleep timer %1$s");
+        put("ListenVideoTimerAfterCurrent", "播完停止", "After this video");
+        put("ListenVideoMore", "加载更多视频", "Load more videos");
+        put("AccDescrPlayerSeekBar", "播放进度", "Playback progress");
         put("VideoPlaylist", "视频列表", "Video playlist");
         put("VideoPlaying", "正在播放", "Playing");
         put("VideoStoredLocally", "本地完整文件", "Complete local file");

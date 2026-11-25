@@ -27,19 +27,25 @@ final class HookRegressionTest {
         HostBridge bridge = new HostBridge(getClass().getClassLoader(), (m, t) -> {});
         Constructor<?> ctor = HostProfile.class.getDeclaredConstructors()[0];
         ctor.setAccessible(true);
-        host = (HostProfile) ctor.newInstance(bridge, 1260, "12.9.2-4335a2e",
+        host = (HostProfile) ctor.newInstance(bridge, 1260, false, "12.9.2-4335a2e",
                 PhotoViewer.class, MediaController.class, MessageObject.class, VideoPlayer.class,
-                null, null, FileLoader.class, new PhotoViewerMembers(bridge, PhotoViewer.class),
+                null, null, FileLoader.class, new PhotoViewerMembers(bridge, PhotoViewer.class, null),
                 new MediaControllerMembers(bridge, MediaController.class),
-                new VideoPlayerMembers(bridge, VideoPlayer.class),
+                new VideoPlayerMembers(bridge, VideoPlayer.class, null),
                 new MessageObjectMembers(bridge, MessageObject.class),
-                new MusicServiceMembers(bridge, null), new PlayerUiMembers(bridge, ContextView.class, null));
+                new MusicServiceMembers(bridge, null), new PlayerUiMembers(bridge, ContextView.class, null, null));
         Field chatClassField = PlayerUiMembers.class.getDeclaredField("chatActivityClass");
         chatClassField.setAccessible(true);
         chatClassField.set(host.playerUi, ChatActivity.class);
         Field openMessageField = PlayerUiMembers.class.getDeclaredField("openPhotoViewerForMessage");
         openMessageField.setAccessible(true);
         openMessageField.set(host.playerUi, ChatActivity.class.getDeclaredMethod("openPhotoViewerForMessage", Object.class, MessageObject.class));
+        Field scrollField = PlayerUiMembers.class.getDeclaredField("updateMessagesVisiblePart");
+        scrollField.setAccessible(true);
+        scrollField.set(host.playerUi, ChatActivity.class.getDeclaredMethod("updateMessagesVisiblePart", boolean.class));
+        Field textureField = PlayerUiMembers.class.getDeclaredField("updateTextureViewPosition");
+        textureField.setAccessible(true);
+        textureField.set(host.playerUi, ChatActivity.class.getDeclaredMethod("updateTextureViewPosition", boolean.class, boolean.class));
         XposedModule module = new XposedModule() {};
         module.attachFramework((XposedInterface) Proxy.newProxyInstance(getClass().getClassLoader(),
                 new Class<?>[]{XposedInterface.class}, (p, m, a) -> {
@@ -112,8 +118,84 @@ final class HookRegressionTest {
         session.arm(VideoBackgroundSession.MODE_DURATION, 10, first.getId());
     }
 
+    private void verifyListenQueue() throws Throwable {
+        MessageObject currentVideo = new MessageObject(15);
+        MessageObject olderVideo = new MessageObject(8);
+        MessageObject newerVideo = new MessageObject(22);
+        MessageObject anotherChat = new MessageObject(24);
+        anotherChat.dialogId = 12;
+        MessageObject anotherAccount = new MessageObject(26);
+        anotherAccount.currentAccount = 1;
+        MessageObject hidden = new MessageObject(18);
+        hidden.hiddenSensitive = true;
+        start(currentVideo, olderVideo);
+
+        Field listenField = NagramXHooks.class.getDeclaredField("listen");
+        listenField.setAccessible(true);
+        ListenVideoAgent listen = (ListenVideoAgent) listenField.get(hooks);
+        Field origin = ListenVideoAgent.class.getDeclaredField("origin");
+        origin.setAccessible(true);
+        origin.set(listen, currentVideo);
+        Method merge = ListenVideoAgent.class.getDeclaredMethod("merge", List.class);
+        merge.setAccessible(true);
+        merge.invoke(listen, Arrays.asList(anotherChat, anotherAccount, hidden, newerVideo,
+                olderVideo, currentVideo, new MessageObject(8)));
+
+        TestMain.check("听视频队列按消息排序且只收录当前账号和会话的可播放视频",
+                listen.queue().equals(Arrays.asList(newerVideo, currentVideo, olderVideo)));
+        TestMain.check("拒绝切换到其他账号、聊天或隐藏视频",
+                !listen.select(anotherAccount) && !listen.select(anotherChat) && !listen.select(hidden));
+        listen.skip(true);
+        TestMain.check("听视频下一条切换到更新的视频", controller.playingMessageObject == newerVideo);
+        listen.skip(true);
+        TestMain.check("同一会话最后一条不跳到其他视频", controller.playingMessageObject == newerVideo);
+        listen.skip(false);
+        TestMain.check("听视频上一条回到原视频", controller.playingMessageObject == currentVideo);
+        MessageObject failedVideo = new MessageObject(17);
+        failedVideo.startWithoutPlayer = true;
+        merge.invoke(listen, Collections.singletonList(failedVideo));
+        controller.videoPlayer.position = 18_000;
+        controller.isPaused = true;
+        TestMain.check("宿主接受换条但没有留下播放会话时反馈失败", !listen.skip(true));
+        TestMain.check("换条失败恢复原视频、进度和暂停",
+                listen.current() == currentVideo && controller.videoPlayer.position == 18_000 && controller.isPaused);
+        VideoPlayer oldTrack = controller.videoPlayer;
+        controller.cleanupOnTrackNotification = true;
+        TestMain.check("再次点击下一条可以越过本次启动失败的条目",
+                listen.skip(true) && listen.current() == newerVideo);
+        TestMain.check("换条仍释放旧播放器，聊天页同步通知不释放新播放器",
+                oldTrack.released && controller.videoPlayer != null && !controller.videoPlayer.released);
+        controller.cleanupOnTrackNotification = false;
+        listen.skip(false);
+        TestMain.check("听视频页显示已设置的定时剩余时间", "10:00".equals(listen.timerStatus(null)));
+        session.disarm();
+        TestMain.check("取消定时后听视频页清空倒计时", listen.timerStatus(null).isEmpty());
+
+        Method miniPlayerInstaller = NagramXHooks.class.getDeclaredMethod("hookMiniPlayer");
+        miniPlayerInstaller.setAccessible(true);
+        miniPlayerInstaller.invoke(hooks);
+        ContextView mini = new ContextView(false);
+        call(mini, "lambda$createPlaybackSpeedButton$0", new Class<?>[]{float.class}, 1.5f);
+        TestMain.check("顶部迷你栏调速同步到详情与后台播放器",
+                listen.speed() == 1.5f && controller.videoPlayer.speed == 1.5f);
+        TestMain.check("后台视频调速保留音乐倍速和宿主栏样式", controller.musicSpeed == 1f && mini.isMusic);
+        listen.setSpeed(2f);
+        call(mini, "updatePlaybackButton", new Class<?>[]{boolean.class}, false);
+        TestMain.check("详情调速后顶部迷你栏同步", mini.shownSpeed == 2f);
+        listen.setSpeed(1f);
+        currentVideo.music = true;
+        call(mini, "lambda$createPlaybackSpeedButton$0", new Class<?>[]{float.class}, 2f);
+        TestMain.check("普通音乐使用自己的倍速设置", controller.musicSpeed == 2f && listen.speed() == 1f);
+        currentVideo.music = false;
+        List<Boolean> pageResults = new ArrayList<>();
+        listen.loadMore(pageResults::add);
+        TestMain.check("共享媒体接口不可用时反馈加载失败，允许列表恢复重试",
+                pageResults.equals(Collections.singletonList(false)) && !listen.isLoadingMedia());
+    }
+
     static void run() {
         try {
+            new HookRegressionTest().verifyListenQueue();
             HookRegressionTest pausedUi = new HookRegressionTest();
             Method sharedInstaller = NagramXHooks.class.getDeclaredMethod("hookTelegramMediaSession", Class.class, Class.class);
             sharedInstaller.setAccessible(true);
@@ -173,6 +255,15 @@ final class HookRegressionTest {
             Map<?, ?> trackedBars = (Map<?, ?>) viewsField.get(barAgent);
             TestMain.check("后台刷新登记播放器栏", trackedBars.containsKey(playerBar));
             TestMain.check("后台刷新不把实时位置栏变为第二播放器", !trackedBars.containsKey(locationBar));
+            PlayerUiMembers niagramBar = new PlayerUiMembers(bars.host.bridge, ContextView.class, null, null, true);
+            bars.host.bridge.invoke(playerBar.subtitleTextView, niagramBar.miniPlayerSetText, "1:07:00", false);
+            TestMain.check("Niagram 迷你栏使用混淆后的宿主文案方法", "1:07:00".contentEquals(playerBar.subtitleTextView.text)
+                    && "f".equals(niagramBar.miniPlayerSetText.getName()));
+            bars.host.bridge.invoke(playerBar.subtitleTextView, bars.host.playerUi.miniPlayerSetText, "名字", false);
+            TestMain.check("原版迷你栏仍解析原始文案方法", "名字".contentEquals(playerBar.subtitleTextView.text));
+            MessageObject captionedVideo = new MessageObject(9);
+            captionedVideo.caption = "  视频标题\n视频描述  ";
+            TestMain.check("迷你栏和通知共用视频说明首行", "视频标题".equals(NotificationDresser.captionFirstLine(bars.host, captionedVideo)));
 
             HookRegressionTest confirming = new HookRegressionTest();
             PhotoViewer currentViewer = PhotoViewer.instance;
@@ -180,31 +271,30 @@ final class HookRegressionTest {
             VideoPlayer currentPlayer = new VideoPlayer();
             currentPlayer.playing = false;
             currentViewer.videoPlayer = currentPlayer;
-            Field photoField = NagramXHooks.class.getDeclaredField("photo");
-            photoField.setAccessible(true);
-            Object photoAgent = photoField.get(confirming.hooks);
-            Field stringsField = PhotoViewerAgent.class.getDeclaredField("strings");
-            stringsField.setAccessible(true);
-            Field idsField = HostStrings.class.getDeclaredField("resourceIds");
-            idsField.setAccessible(true);
-            @SuppressWarnings("unchecked")
-            Map<String, Integer> ids = (Map<String, Integer>) idsField.get(stringsField.get(photoAgent));
-            ids.put("VideoSleepTimerAfterCurrentSet", 0);
-            ids.put("VideoSleepTimerChoose", 0);
-            Method pick = PhotoViewerAgent.class.getDeclaredMethod("onTimerPicked", Object.class,
-                    android.app.Activity.class, int.class, int.class);
-            pick.setAccessible(true);
-            pick.invoke(photoAgent, currentViewer, null, VideoBackgroundSession.MODE_AFTER_CURRENT, 0);
-            TestMain.check("全屏确认定时后定时器生效", confirming.session.isArmed());
-            TestMain.check("全屏确认定时不转入后台", !confirming.session.isBackgroundActive()
-                    && confirming.controller.videoPlayer == null);
-            TestMain.check("全屏确认定时保留原播放器", currentViewer.videoPlayer == currentPlayer);
-            TestMain.check("全屏确认定时保留暂停状态", !currentPlayer.playing);
+            confirming.session.arm(VideoBackgroundSession.MODE_AFTER_CURRENT, 0, 7);
             confirming.call(currentViewer, "closePhoto", new Class<?>[]{boolean.class, boolean.class}, false, true);
             TestMain.check("确认定时后手动返回才转入后台", confirming.session.isBackgroundActive()
                     && confirming.controller.videoPlayer == currentPlayer);
             TestMain.check("手动返回时保留定时器和暂停状态", confirming.session.isArmed()
                     && confirming.controller.isPaused);
+
+            HookRegressionTest preparedQueue = new HookRegressionTest();
+            PhotoViewer preparedViewer = PhotoViewer.instance;
+            MessageObject preparedCurrent = new MessageObject(70);
+            MessageObject preparedNext = new MessageObject(71);
+            preparedViewer.currentMessageObject = preparedCurrent;
+            preparedViewer.videoPlayer = new VideoPlayer();
+            preparedViewer.videoPlayer.playing = false;
+            preparedViewer.videoPlayer.position = 25000;
+            preparedViewer.imagesArr.add(preparedCurrent);
+            Field preparedPhotoField = NagramXHooks.class.getDeclaredField("photo");
+            preparedPhotoField.setAccessible(true);
+            PhotoViewerAgent photoAgent = (PhotoViewerAgent) preparedPhotoField.get(preparedQueue.hooks);
+            photoAgent.preservePlayerOnClose(preparedViewer, Arrays.asList(preparedCurrent, preparedNext));
+            TestMain.check("进入听视频复用预先收集的完整列表", preparedQueue.controller.playlist.size() == 2
+                    && preparedQueue.controller.playlist.contains(preparedNext));
+            TestMain.check("复用列表的播放器交接保留暂停和进度", preparedQueue.controller.isPaused
+                    && preparedCurrent.audioProgressMs == 25000 && preparedViewer.videoPlayer == null);
 
             HookRegressionTest ordinary = new HookRegressionTest();
             PhotoViewer viewer = new PhotoViewer();
@@ -259,6 +349,11 @@ final class HookRegressionTest {
             switching = new HookRegressionTest();
             switching.start(first, second);
 
+            VideoPlayer scrollingPlayer = switching.controller.videoPlayer;
+            switching.call(new ChatActivity(), "updateMessagesVisiblePart", new Class<?>[]{boolean.class}, false);
+            TestMain.check("滚出原视频时保留后台播放器", switching.controller.videoPlayer == scrollingPlayer && !scrollingPlayer.released);
+            TestMain.check("滚动后继续后台定时", switching.session.isBackgroundActive() && switching.session.isArmed());
+
             switching.call(switching.controller, "cleanupPlayer", new Class<?>[]{boolean.class, boolean.class, boolean.class, boolean.class}, true, true, false, false);
             TestMain.check("用户停止播放时取消倒计时", !switching.session.isArmed());
             TestMain.check("用户停止播放时结束后台会话", !switching.session.isBackgroundActive());
@@ -312,6 +407,8 @@ final class HookRegressionTest {
             List<String> serviceAttempts = new ArrayList<>();
             Field mediaField = PhotoViewerAgent.class.getDeclaredField("media");
             mediaField.setAccessible(true);
+            Field photoField = NagramXHooks.class.getDeclaredField("photo");
+            photoField.setAccessible(true);
             mediaField.set(photoField.get(retainedReference.hooks), new MediaControllerAgent(retainedReference.host,
                     retainedReference.session, (m, t) -> serviceAttempts.add(m)));
             retainedReference.call(PhotoViewer.instance, "closePhoto", new Class<?>[]{boolean.class, boolean.class}, false, true);
@@ -358,21 +455,20 @@ final class HookRegressionTest {
             TestMain.check("列表换视频回全屏接入所选视频", PhotoViewer.instance.currentMessageObject == second);
             TestMain.check("全屏接入有效播放器", PhotoViewer.instance.videoPlayer != null);
             TestMain.check("未下载视频由 PhotoViewer 加载而非先创建后台播放器", !reopen.controller.downloadingCurrentMessage);
-            PhotoViewer.instance.imagesArr.add(first);
-            PhotoViewer.instance.imagesArr.add(second);
-            int closedBeforeSelection = PhotoViewer.instance.closeCount;
-            TestMain.check("视频列表可在当前播放页切换", ui.selectVideo(PhotoViewer.instance, null, first));
-            TestMain.check("视频列表切换不先关闭播放页", PhotoViewer.instance.closeCount == closedBeforeSelection
-                    && PhotoViewer.instance.currentMessageObject == first);
-            TestMain.check("视频列表原生切换保留定时器", reopen.session.isArmed());
-            TestMain.check("视频列表可启动未下载视频的宿主加载流程", ui.selectVideo(PhotoViewer.instance, null, second)
-                    && PhotoViewer.instance.loadRequests == 1 && PhotoViewer.instance.videoPlayer != null);
             TestMain.check("全屏接管播放器后控制器不再持有同一播放器", reopen.controller.videoPlayer == null);
             reopen.call(PhotoViewer.instance, "closePhoto", new Class<?>[]{boolean.class, boolean.class}, false, true);
             TestMain.check("全屏往返后仍有后台播放器和定时器", reopen.controller.videoPlayer != null
                     && reopen.session.isBackgroundActive() && reopen.session.isArmed());
-            ui.openInFullscreen(second);
-            android.os.Handler.runReopen();
+            reopen.controller.isPaused = true;
+            reopen.controller.setPlaybackSpeed(false, 1.5f);
+            int[] reopenCallbacks = {0};
+            ui.openInFullscreen(second, () -> {
+                if (PhotoViewer.instance.videoPlayer != null && PhotoViewer.instance.manuallyPaused) reopenCallbacks[0]++;
+            });
+            TestMain.check("返回画面在宿主接管后通知听视频面板退出", reopenCallbacks[0] == 1);
+            TestMain.check("后台暂停时返回画面保留宿主手动暂停状态",
+                    PhotoViewer.instance.manuallyPaused && !PhotoViewer.instance.videoPlayer.playing);
+            TestMain.check("同一视频返回画面保留播放倍速", PhotoViewer.instance.videoPlayer.speed == 1.5f);
             reopen.session.disarm();
             reopen.call(PhotoViewer.instance, "closePhoto", new Class<?>[]{boolean.class, boolean.class}, false, true);
             TestMain.check("定时到期后再次全屏返回仍保留播放器", reopen.controller.videoPlayer != null
@@ -386,8 +482,8 @@ final class HookRegressionTest {
             VideoPlayer held = rejectedOpen.controller.videoPlayer;
             PlayerUiAgent rejectedUi = new PlayerUiAgent(rejectedOpen.host, rejectedOpen.session,
                     new HostStrings(rejectedOpen.host.bridge, (m, t) -> {}), (m, t) -> {});
-            rejectedUi.openInFullscreen(first);
-            android.os.Handler.runReopen();
+            rejectedUi.openInFullscreen(first, () -> reopenCallbacks[0]++);
+            TestMain.check("返回画面失败时听视频面板保持打开", reopenCallbacks[0] == 1);
             TestMain.check("全屏打开失败恢复后台状态", rejectedOpen.session.isBackgroundActive());
             TestMain.check("全屏打开失败保留定时器", rejectedOpen.session.isArmed());
             TestMain.check("全屏打开失败恢复原播放器与消息", rejectedOpen.controller.videoPlayer == held && rejectedOpen.controller.playingMessageObject == first);
@@ -406,12 +502,19 @@ class MediaController {
     Object audioPlayer;
     MessageObject playingMessageObject;
     boolean isPaused, forceLoopCurrentPlaylist, downloadingCurrentMessage;
-    boolean cleanupOnVideoStart;
+    boolean cleanupOnVideoStart, cleanupOnTrackNotification;
+    float musicSpeed = 1f, videoSpeed = 1f;
     int currentPlaylistNum;
     final List<Object> playlist = new ArrayList<>(), shuffledPlaylist = new ArrayList<>();
     final Map<Integer, Object> playlistMap = new HashMap<>();
     static MediaController getInstance() { return instance; }
     MessageObject getPlayingMessageObject() { return playingMessageObject; }
+    float getPlaybackSpeed(boolean music) { return music ? musicSpeed : videoSpeed; }
+    void setPlaybackSpeed(boolean music, float speed) {
+        if (music) musicSpeed = speed;
+        else videoSpeed = speed;
+        if (videoPlayer != null) videoPlayer.speed = speed;
+    }
     List<Object> getPlaylist() { return playlist; }
     void injectVideoPlayer(VideoPlayer player, MessageObject message) throws Throwable {
         videoPlayer = player; playingMessageObject = message;
@@ -437,12 +540,25 @@ class MediaController {
         }
         cleanupPlayer(false, false);
         playlist.clear(); playlistMap.clear(); shuffledPlaylist.clear();
+        if (message.startWithoutPlayer) return true;
         if (message.waitForDownload) {
             videoPlayer = null; playingMessageObject = message; downloadingCurrentMessage = true;
             return true;
         }
         videoPlayer = new VideoPlayer(); playingMessageObject = message;
+        videoPlayer.position = message.audioProgressMs;
+        isPaused = false;
+        if (cleanupOnTrackNotification) {
+            HookRegressionTest.current.call(new ChatActivity(), "updateTextureViewPosition",
+                    new Class<?>[]{boolean.class, boolean.class}, true, false);
+        }
         return true;
+    }
+    void pauseMessage(MessageObject message) {
+        if (playingMessageObject == message && videoPlayer != null) {
+            isPaused = true;
+            videoPlayer.pause();
+        }
     }
     void sortPlaylist() {}
     void playNextMessage() {}
@@ -450,19 +566,22 @@ class MediaController {
 }
 class MessageObject {
     final int id;
+    CharSequence caption;
     int currentAccount, audioProgressMs, audioProgressSec;
     float audioProgress;
     long dialogId = 10L;
-    boolean waitForDownload;
+    boolean waitForDownload, hiddenSensitive, music, startWithoutPlayer;
     final OriginalTl.Document document = new OriginalTl.Document();
     MessageObject(int id) { this.id = id; }
     int getId() { return id; }
+    double getDuration() { return 120; }
     long getDialogId() { return dialogId; }
     OriginalTl.Document getDocument() { return document; }
-    boolean isVideo() { Boolean masked = MessageIdentityMask.resolve(this, MessageIdentityMask.Kind.VIDEO); return masked == null || masked; }
-    boolean isMusic() { return false; }
+    boolean isVideo() { Boolean masked = MessageIdentityMask.resolve(this, MessageIdentityMask.Kind.VIDEO); return masked == null ? !music : masked; }
+    boolean isMusic() { return music; }
     boolean isRoundVideo() { return false; }
     boolean isLivePhoto() { return false; }
+    boolean isHiddenSensitive() { return hiddenSensitive; }
 }
 class OriginalTl { static class Document {} }
 class FileLoader {
@@ -472,11 +591,14 @@ class FileLoader {
 class VideoPlayer {
     boolean released;
     boolean playing = true;
+    float speed = 1f;
+    long position;
     int state = 3;
     Object delegate = new Object(), textureView = new Object(), surfaceView;
     boolean isPlaying() { return playing; }
+    void pause() { playing = false; }
     int getPlaybackState() { return state; }
-    long getCurrentPosition() { return 0L; }
+    long getCurrentPosition() { return position; }
     void setDelegate(Object delegate) { this.delegate = delegate; }
     void setTextureView(Object texture) { textureView = texture; }
     void setSurfaceView(Object surface) { surfaceView = surface; }
@@ -494,7 +616,7 @@ class PhotoViewer {
     final ArrayList<Object> imagesArr = new ArrayList<>();
     int closeCount;
     int loadRequests;
-    boolean isPlaying, playerInjected, rejectOpen, visible, firstFrameRendered, textureUploaded;
+    boolean isPlaying, playerInjected, rejectOpen, visible, firstFrameRendered, textureUploaded, manuallyPaused;
     final ProgressView[] photoProgressViews = {new ProgressView()};
     int drawnState;
     void drawProgress(Object canvas, float x, float scale, float y, float alpha) { drawnState = photoProgressViews[0].backgroundState; }
@@ -533,10 +655,30 @@ class SharedMediaHolder {
 class ActivityHolder { static android.app.Activity instance; }
 class ContextView {
     final boolean isLocation;
+    final int currentStyle = 0;
+    final Label subtitleTextView = new Label();
+    boolean isMusic = true;
+    float shownSpeed;
     ContextView(boolean location) { isLocation = location; }
     void checkPlayer(boolean create) {}
+    void updatePlaybackButton(boolean animated) { shownSpeed = MediaController.instance.getPlaybackSpeed(isMusic); }
+    void lambda$createPlaybackSpeedButton$0(float speed) { MediaController.instance.setPlaybackSpeed(isMusic, speed); }
+
+    static class Label {
+        CharSequence text = "";
+        void setText(CharSequence text, boolean animated) { this.text = text; }
+        void f(CharSequence text, boolean animated) { this.text = text; }
+    }
 }
 class ChatActivity {
+    void updateTextureViewPosition(boolean update, boolean scroll) throws Throwable {
+        MediaController.instance.cleanupPlayer(true, true, false, false);
+    }
+
+    void updateMessagesVisiblePart(boolean inLayout) throws Throwable {
+        MediaController.instance.cleanupPlayer(true, true, false, false);
+    }
+
     void openPhotoViewerForMessage(Object cell, MessageObject target) throws Throwable {
         // Original host clears the old player before calling PhotoViewer.openPhoto.
         MediaController.instance.cleanupPlayer(true, true, false, false);

@@ -16,6 +16,7 @@ final class MediaControllerAgent {
     public static final int EXO_STATE_READY = 3;
     public static final int EXO_STATE_ENDED = 4;
     public static final long TIME_UNSET = Long.MIN_VALUE + 1;
+    private static final ThreadLocal<Object> TRANSFERRING_VIEWER_PLAYER = new ThreadLocal<>();
 
     public interface PlayerTransfer {
         boolean transfer(Object videoPlayer, Object message);
@@ -42,7 +43,9 @@ final class MediaControllerAgent {
     }
 
     Object playingMessage() {
-        return bridge.invoke(controller(), media.getPlayingMessageObject);
+        Object controller = controller();
+        return media.getPlayingMessageObject == null ? bridge.getField(controller, media.playingMessageField)
+                : bridge.invoke(controller, media.getPlayingMessageObject);
     }
 
     Object activePlayer() {
@@ -65,21 +68,14 @@ final class MediaControllerAgent {
         if (current == null) return false;
         Object playing = bridge.invoke(current, player.isPlaying);
         if (!Boolean.TRUE.equals(playing)) return false;
-        Object stateObj = bridge.invoke(current, player.getPlaybackState);
-        if (stateObj instanceof Number) {
-            return ((Number) stateObj).intValue() == EXO_STATE_READY;
-        }
-        return true;
+        int state = host.playbackStateOf(current);
+        return state < 0 || state == EXO_STATE_READY;
     }
 
     boolean hasReachedEnd() {
         Object current = activePlayer();
         if (current == null) return false;
-        Object stateObj = bridge.invoke(current, player.getPlaybackState);
-        if (stateObj instanceof Number) {
-            return ((Number) stateObj).intValue() == EXO_STATE_ENDED;
-        }
-        return false;
+        return host.playbackStateOf(current) == EXO_STATE_ENDED;
     }
 
     long durationMs() {
@@ -114,7 +110,32 @@ final class MediaControllerAgent {
         if (c == null) return;
         Object message = playingMessage();
         if (message == null) return;
-        bridge.invoke(c, media.pauseMessage, message);
+        if (host.niagram1322) bridge.invoke(c, media.pauseMessage, message, true);
+        else bridge.invoke(c, media.pauseMessage, message);
+    }
+
+    boolean play(Object message) {
+        Object controller = controller();
+        return Boolean.TRUE.equals(host.niagram1322 ? bridge.invoke(controller, media.playMessage, message)
+                : bridge.invoke(controller, media.playMessage, message, false));
+    }
+
+    void seek(Object message, float fraction) {
+        if (host.niagram1322) bridge.invoke(controller(), media.seekToProgress, fraction, message);
+        else bridge.invoke(controller(), media.seekToProgress, message, fraction);
+    }
+
+    boolean isTransferringViewerPlayer(Object player) {
+        return player != null && TRANSFERRING_VIEWER_PLAYER.get() == player;
+    }
+
+    void invokeViewerTransfer(Object viewer, Object player) {
+        if (host.niagram1322) TRANSFERRING_VIEWER_PLAYER.set(player);
+        try {
+            bridge.invoke(viewer, host.photo.injectToMediaController);
+        } finally {
+            if (host.niagram1322) TRANSFERRING_VIEWER_PLAYER.remove();
+        }
     }
 
     boolean startBackgroundPlayback(
@@ -191,7 +212,7 @@ final class MediaControllerAgent {
         bridge.invoke(c, media.cleanupPlayer2, true, true);
     }
 
-    private void seedProgress(Object message, long positionMs) {
+    void seedProgress(Object message, long positionMs) {
         Object durationObj = bridge.invoke(message, host.message.getDuration);
         double durationSeconds = (durationObj instanceof Number) ? ((Number) durationObj).doubleValue() : 0.0;
         long durationMs = (long) (durationSeconds * 1000.0);
@@ -293,7 +314,7 @@ final class MediaControllerAgent {
             if (host.messageIdOf(videos.get(index)) != host.messageIdOf(current)) continue;
             if (videos.size() < 2) return true;
             Object target = videos.get((index + (next ? 1 : videos.size() - 1)) % videos.size());
-            if (!Boolean.TRUE.equals(bridge.invoke(c, media.playMessage, target, false))) {
+            if (!play(target)) {
                 logger.log("通知切换视频失败：message=" + host.messageIdOf(target), null);
             }
             return true;
@@ -305,10 +326,11 @@ final class MediaControllerAgent {
         if (controller == null) return;
         Object overlay = bridge.getField(controller, media.pipRoundVideoViewField);
         if (overlay != null) {
-            bridge.invokeNamed(overlay, "close", false);
+            bridge.invokeNamed(overlay, host.niagram1322 ? "k" : "close", false);
         }
         bridge.setField(controller, media.pipRoundVideoViewField, null);
-        bridge.setField(controller, media.pipSwitchingStateField, 0);
+        if (host.niagram1322) bridge.setField(controller, media.pipSwitchingStateField, (byte) 0);
+        else bridge.setField(controller, media.pipSwitchingStateField, 0);
     }
 
     void startMusicPlayerService() {
@@ -317,8 +339,7 @@ final class MediaControllerAgent {
             logger.log("无法启动视频通知：缺少 MusicPlayerService", null);
             return;
         }
-        Class<?> appLoader = bridge.loadClass("org.telegram.messenger.ApplicationLoader");
-        Object ctx = bridge.getStaticField(appLoader, "applicationContext");
+        Context ctx = host.getAppContext();
         if (!(ctx instanceof Context)) {
             logger.log("无法启动视频通知：应用 Context 不可用", null);
             return;
@@ -342,13 +363,14 @@ final class MediaControllerAgent {
         if (!(idVal instanceof Number)) return;
         int id = ((Number) idVal).intValue();
 
-        Class<?> nc = bridge.loadClass("org.telegram.messenger.NotificationCenter");
-        Object instance = bridge.invokeStatic(nc, "getInstance", account);
+        Class<?> nc = bridge.loadClass(host.niagram1322
+                ? "org.telegram.messenger.u1" : "org.telegram.messenger.NotificationCenter");
+        Object instance = bridge.invokeStatic(nc, host.niagram1322 ? "g" : "getInstance", account);
         if (instance == null) return;
-        Object eventVal = bridge.getStaticField(nc, "messagePlayingPlayStateChanged");
+        Object eventVal = bridge.getStaticField(nc, host.niagram1322 ? "g2" : "messagePlayingPlayStateChanged");
         if (!(eventVal instanceof Number)) return;
         int event = ((Number) eventVal).intValue();
 
-        bridge.invokeNamed(instance, "postNotificationName", event, new Object[]{id});
+        bridge.invokeNamed(instance, host.niagram1322 ? "l" : "postNotificationName", event, new Object[]{id});
     }
 }
