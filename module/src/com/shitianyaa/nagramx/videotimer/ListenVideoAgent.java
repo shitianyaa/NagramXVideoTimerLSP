@@ -40,6 +40,7 @@ final class ListenVideoAgent {
     private boolean loadingMedia;
     private final List<Consumer<Boolean>> mediaCallbacks = new ArrayList<>();
     private ListenVideoPage page;
+    private Runnable queueChanged = () -> {};
 
     ListenVideoAgent(HostProfile host, MediaControllerAgent media, VideoBackgroundSession session,
                      HostTheme theme, HostStrings strings, PhotoViewerAgent photo, PlayerUiAgent playerUi,
@@ -102,6 +103,7 @@ final class ListenVideoAgent {
         if (host.canManagePlaylist()) {
             media.applyPlaylist(media.controller(), queue(), target);
         }
+        queueChanged.run();
         if (open(activity, () -> closeSourceViewer(viewer, target))) return true;
         closeSourceViewer(viewer, target);
         return false;
@@ -180,6 +182,10 @@ final class ListenVideoAgent {
         if (page == closed) page = null;
     }
 
+    void setQueueChangedListener(Runnable listener) {
+        queueChanged = listener;
+    }
+
     private void mergeHostPlaylist() {
         Object playlist = bridge.getField(media.controller(), host.media.playlistField);
         if (playlist instanceof List) merge((List<?>) playlist);
@@ -242,6 +248,7 @@ final class ListenVideoAgent {
                 merge(items);
                 Object playing = current();
                 if (playing != null && host.canManagePlaylist()) media.applyPlaylist(media.controller(), queue(), playing);
+                queueChanged.run();
             }
             finishMediaLoad(items != null);
         })) {
@@ -278,6 +285,7 @@ final class ListenVideoAgent {
         boolean accepted = media.play(target);
         if (accepted && sameMessage(target, current()) && media.hasSession()) {
             failedVideos.remove(host.messageIdOf(target));
+            queueChanged.run();
             return true;
         }
 
@@ -295,6 +303,7 @@ final class ListenVideoAgent {
                 logger.log("听视频恢复原视频失败：message=" + host.messageIdOf(current), null);
             }
         }
+        queueChanged.run();
         return false;
     }
 

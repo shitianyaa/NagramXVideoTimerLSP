@@ -1,5 +1,7 @@
 package com.shitianyaa.nagramx.videotimer;
 
+import android.media.session.PlaybackState;
+
 import com.shitianyaa.nagramx.videotimer.core.Xp;
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedInterface.Chain;
@@ -212,8 +214,20 @@ final class HookRegressionTest {
         installer.invoke(hooks, PlatformMediaCallback.class);
         PlatformMediaCallback shared = new PlatformMediaCallback();
         PlatformMediaCallback service = new PlatformMediaCallback();
+        ListenVideoMediaActions actions = new ListenVideoMediaActions(listen);
+        long play = PlaybackState.ACTION_PLAY;
+        long previous = PlaybackState.ACTION_SKIP_TO_PREVIOUS;
+        long next = PlaybackState.ACTION_SKIP_TO_NEXT;
+        TestMain.check("系统媒体状态补齐两个切换方向并保留播放操作",
+                actions.queueActions(play) == (play | previous | next));
+        TestMain.check("补齐操作只适用于 Niagram 两个播放会话",
+                ListenVideoMediaActions.isPlaybackSession("TelegramMediaSession")
+                        && ListenVideoMediaActions.isPlaybackSession("telegramAudioPlayer")
+                        && !ListenVideoMediaActions.isPlaybackSession("unrelated"));
         call(shared, "onSkipToNext", new Class<?>[]{});
         TestMain.check("系统共享会话下一条使用听视频队列", controller.playingMessageObject == newer);
+        TestMain.check("列表末端的系统媒体状态仅提供上一条",
+                actions.queueActions(play | next) == (play | previous));
         call(service, "onSkipToPrevious", new Class<?>[]{});
         TestMain.check("系统服务会话上一条使用同一队列", controller.playingMessageObject == first);
         TestMain.check("系统切换不重复执行宿主音乐分支", shared.next == 0 && service.previous == 0);
@@ -222,9 +236,13 @@ final class HookRegressionTest {
         call(service, "onSkipToPrevious", new Class<?>[]{});
         TestMain.check("系统上一条在队列边界停止且不交给音乐分支",
                 controller.playingMessageObject == older && service.previous == 0);
+        TestMain.check("列表开头的系统媒体状态仅提供下一条",
+                actions.queueActions(play | previous) == (play | next));
         older.music = true;
         call(shared, "onSkipToNext", new Class<?>[]{});
         TestMain.check("普通音乐的系统切换透传给宿主", shared.next == 1 && controller.playingMessageObject == older);
+        TestMain.check("普通音乐的系统媒体状态保留宿主操作",
+                actions.queueActions(play | previous) == (play | previous));
         older.music = false;
         session.end();
         call(service, "onSkipToPrevious", new Class<?>[]{});

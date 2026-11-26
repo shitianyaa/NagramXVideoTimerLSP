@@ -516,7 +516,9 @@ final class NagramXHooks {
 
     private void hookPlatformMediaSession() {
         if (host.niagram1322) {
-            hookPlatformMediaSession(host.bridge.loadClass(NiagramDexClasses.PLATFORM_MEDIA_CALLBACK));
+            Class<?> callback = host.bridge.loadClass(NiagramDexClasses.PLATFORM_MEDIA_CALLBACK);
+            hookPlatformMediaSession(callback);
+            if (callback != null) new ListenVideoMediaActions(listen).install();
         }
     }
 

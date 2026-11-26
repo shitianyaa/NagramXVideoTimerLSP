@@ -4,10 +4,31 @@
 
 ## [未发布]
 
+## [1.3.0] - 2026-11-26
+
+### 新增
+
+- 独立「听视频」播放页，提供进度、倍速、播放／暂停、上一条／下一条、共享视频列表和返回画面；视频定时入口位于页面右上角。
+- 音乐与音频文件定时关闭：展开播放器，点右下角「⋮」的第一项「定时关闭」，可选 15／30／45／60／90 分钟或自定义 1 分钟至 23 小时 59 分钟。
+- 音频定时按实际播放时间累计，暂停、下载等待和缓冲时冻结，同账号切歌继承；到期暂停并保留进度。聊天语音、一次性语音和圆形视频排除在外，音视频定时独立管理。
+
 ### 更改
 
 - 应用名称改为「Nagram 定时播放」，工程名和安装包前缀统一为 `NagramTimer`；简介补充听视频、后台播放与音视频定时关闭。
-- 模块首页补充功能说明，并更新 NiagramX 13.2.2 的真机验证信息。
+- 移除桌面入口和模块状态页。安装后在 LSPosed 中启用，播放和定时在宿主应用内操作。
+- 模块图标改用浅蓝背景。
+- 自定义时长为 0 小时时，分钟从 1 开始；其他小时可选 0 分钟。播完当前曲目停止使用宿主循环／随机菜单中的「播放一次」。
+
+### 修复
+
+- 修复 Niagram 13.2.2 重新混淆后模块失效的问题：通过宿主字段、类型结构和 DEX 特征解析相关类，并按 APK 内容隔离缓存。
+- 修复 Niagram 听视频时系统媒体卡片缺少「上一条／下一条」或点击无效的问题。卡片按当前队列显示可切换的方向。
+- 修复系统切歌时旧音频播放器的清理回调导致定时被取消的问题；忽略旧播放器回调，模块重载时释放音频计时任务与界面引用。
+
+### 兼容
+
+- 模块作用域增加 NiagramX（`top.nkbe.niagram`），保留 NagramX（`nu.gpu.nagram`）。
+- 在 Niagram 13.2.2（`127b70d`，1322）实测听视频、系统媒体切换，以及音乐定时的暂停恢复、锁屏到期和切歌继承。
 
 ## [1.2.0] - 2026-10-02
 
@@ -94,7 +115,8 @@
 - 模块状态页、运行时签名探测、日志和安全停用机制。
 - GitHub Actions 自动构建、检查和标签发布流程。
 
-[未发布]: https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/compare/10200-1.2.0...HEAD
+[未发布]: https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/compare/10300-1.3.0...HEAD
+[1.3.0]: https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/releases/tag/10300-1.3.0
 [1.2.0]: https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/releases/tag/10200-1.2.0
 [1.1.2]: https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/releases/tag/10102-1.1.2
 [1.1.1]: https://github.com/shitianyaa/NagramXVideoTimerLSP/compare/v1.1.0...10101-1.1.1
