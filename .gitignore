@@ -11,3 +11,4 @@ module/build
 module/mod.keystore
 build
 /Progress
+.agents/
