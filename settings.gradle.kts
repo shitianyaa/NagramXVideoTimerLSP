@@ -22,6 +22,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "NagramX Video Timer LSP"
+rootProject.name = "NagramTimer"
 
 include(":app")

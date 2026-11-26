@@ -363,8 +363,7 @@ final class MediaControllerAgent {
         if (!(idVal instanceof Number)) return;
         int id = ((Number) idVal).intValue();
 
-        Class<?> nc = bridge.loadClass(host.niagram1322
-                ? "org.telegram.messenger.u1" : "org.telegram.messenger.NotificationCenter");
+        Class<?> nc = bridge.loadClass("org.telegram.messenger.NotificationCenter");
         Object instance = bridge.invokeStatic(nc, host.niagram1322 ? "g" : "getInstance", account);
         if (instance == null) return;
         Object eventVal = bridge.getStaticField(nc, host.niagram1322 ? "g2" : "messagePlayingPlayStateChanged");

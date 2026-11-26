@@ -37,7 +37,7 @@ final class HostListenControls {
     }
 
     View skip(boolean next, Runnable action) {
-        String type = host.niagram1322 ? "org.telegram.ui.Components.nm" : "org.telegram.ui.Components.RLottieImageView";
+        String type = "org.telegram.ui.Components.RLottieImageView";
         Object instance = bridge.newInstance(type, context);
         int raw = resource("player_prev", "raw");
         if (!(instance instanceof ImageView) || raw == 0) return hidden();
@@ -70,8 +70,7 @@ final class HostListenControls {
         if (!player.canSetSpeed()) return hidden();
         View menu = menu("ListenVideoSpeed");
         if (menu.getVisibility() == View.GONE) return menu;
-        speedIcon = bridge.newInstance(host.niagram1322 ? "org.telegram.ui.Components.lt"
-                : "org.telegram.ui.Components.SpeedIconDrawable", true);
+        speedIcon = bridge.newInstance("org.telegram.ui.Components.SpeedIconDrawable", true);
         if (speedIcon instanceof Drawable) {
             bridge.invokeNamed(speedIcon, host.niagram1322 ? "b" : "setColor", tint);
             bridge.invokeNamed(menu, "setIcon", speedIcon);
@@ -114,8 +113,7 @@ final class HostListenControls {
     }
 
     View seekBar(ListenVideoPage page) {
-        Object instance = bridge.newInstance(host.niagram1322 ? "org.telegram.ui.Components.dp"
-                : "org.telegram.ui.Components.SeekBarView", context);
+        Object instance = bridge.newInstance("org.telegram.ui.Components.SeekBarView", context);
         if (!(instance instanceof View)) return hidden();
         View view = (View) instance;
         Method setter = bridge.findMethod(view.getClass(), "setDelegate", 1, method ->

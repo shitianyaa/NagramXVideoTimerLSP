@@ -102,11 +102,11 @@ jobs:
           set -euo pipefail
           version="$(sed -n 's/^MODULE_VERSION_NAME=//p' gradle.properties | tr -d '\r')"
           mkdir -p artifacts/debug
-          cp app/build/outputs/apk/debug/app-debug.apk "artifacts/debug/NagramXVideoTimer-$version-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "artifacts/debug/NagramTimer-v$version-debug.apk"
 
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             mkdir -p artifacts/release
-            cp app/build/outputs/apk/release/app-release.apk "artifacts/release/NagramXVideoTimer-$version.apk"
+            cp app/build/outputs/apk/release/app-release.apk "artifacts/release/NagramTimer-v$version-release.apk"
 
             # Release notes are produced here so both the build and the release
             # job consume one CHANGELOG-derived source instead of duplicating the

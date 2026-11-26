@@ -2,6 +2,7 @@ package com.shitianyaa.nagramx.videotimer;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.pm.ApplicationInfo;
 import android.view.SurfaceView;
 import android.view.TextureView;
 
@@ -13,6 +14,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * 宿主 PhotoViewer 成员。
@@ -59,6 +62,8 @@ final class PhotoViewerMembers {
     }
 
     PhotoViewerMembers(HostBridge bridge, Class<?> type, NiagramXNames.PhotoViewer names, boolean niagram1322) {
+        Field messageField = bridge.findField(type, "currentMessageObject");
+        Class<?> messageType = messageField == null ? null : messageField.getType();
         getInstance = bridge.findMethodOrShape(type, niagram1322 ? "p7" : HostBridge.pickName(names != null ? names.getInstance : null, "getInstance"), 0,
                 m -> Modifier.isStatic(m.getModifiers()) && m.getReturnType() == type && !m.isSynthetic());
         hasInstance = bridge.findMethod(type, "hasInstance", 0, m -> Modifier.isStatic(m.getModifiers()));
@@ -85,7 +90,7 @@ final class PhotoViewerMembers {
         openPhoto = bridge.findMethodOrShape(type, niagram1322 ? "Sa" : HostBridge.pickName(names != null ? names.openPhotoMessage : null, "openPhoto"), 6, m -> {
             Class<?>[] p = m.getParameterTypes();
             if (p.length != 6 || (niagram1322
-                    ? !p[0].getName().equals("qo6") : !p[0].getName().endsWith(".MessageObject"))) return false;
+                    ? p[0] != messageType : !p[0].getName().endsWith(".MessageObject"))) return false;
             // 原版 NagramX 的第 2 参是 dialogId(long)，NiagramX 在它前面插了 ChatActivity
             return p[1] == long.class || p[1].getName().endsWith(".ChatActivity");
         });
@@ -188,7 +193,9 @@ final class MediaControllerMembers {
     }
 
     MediaControllerMembers(HostBridge bridge, Class<?> type, boolean niagram1322) {
-        getInstance = bridge.findMethod(type, niagram1322 ? "w" : "getInstance", 0, m -> Modifier.isStatic(m.getModifiers()));
+        Class<?> messageType = bridge.loadClass("org.telegram.messenger.MessageObject");
+        getInstance = bridge.findMethodOrShape(type, niagram1322 ? "w" : "getInstance", 0,
+                m -> Modifier.isStatic(m.getModifiers()) && m.getParameterCount() == 0 && m.getReturnType() == type);
         injectVideoPlayer = bridge.findMethod(type, "injectVideoPlayer", 2, m ->
                 !Modifier.isStatic(m.getModifiers()) &&
                         // NiagramX 把 VideoPlayer 搬成默认包短名，不能按类名后缀判断，改用第二参定位
@@ -224,7 +231,7 @@ final class MediaControllerMembers {
         buildShuffledPlayList = bridge.findMethod(type, "buildShuffledPlayList", 0);
         updateVideoState = bridge.findMethod(type, niagram1322 ? "L0" : "updateVideoState", 5, m -> {
             Class<?>[] p = m.getParameterTypes();
-            return (niagram1322 ? p[0].getName().equals("qo6") : p[0].getName().endsWith(".MessageObject")) &&
+            return (niagram1322 ? p[0] == messageType : p[0].getName().endsWith(".MessageObject")) &&
                     p[1] == int[].class &&
                     p[2] == boolean.class &&
                     p[3] == boolean.class &&
@@ -457,8 +464,9 @@ final class MusicServiceMembers {
     }
 
     MusicServiceMembers(HostBridge bridge, Class<?> type, boolean niagram1322) {
+        Class<?> messageType = bridge.loadClass("org.telegram.messenger.MessageObject");
         createNotification = bridge.findMethod(type, niagram1322 ? "a" : "createNotification", 2, m ->
-                (niagram1322 ? m.getParameterTypes()[0].getName().equals("qo6")
+                (niagram1322 ? m.getParameterTypes()[0] == messageType
                         : m.getParameterTypes()[0].getName().endsWith(".MessageObject")) &&
                         m.getParameterTypes()[1] == boolean.class);
         updatePlaybackState = bridge.findMethod(type, niagram1322 ? "f" : "updatePlaybackState", 1, m ->
@@ -582,7 +590,8 @@ final class PlayerUiMembers {
                         lambdas.add(m);
                     }
                 }
-            } catch (Throwable ignored) {
+            } catch (Throwable failure) {
+                bridge.report("枚举迷你播放器点击回调失败", failure);
             }
         }
         contextViewClickLambdas = Collections.unmodifiableList(lambdas);
@@ -594,7 +603,8 @@ final class PlayerUiMembers {
                     c.setAccessible(true);
                     cvCtors.add(c);
                 }
-            } catch (Throwable ignored) {
+            } catch (Throwable failure) {
+                bridge.report("枚举迷你播放器构造方法失败", failure);
             }
         }
         contextViewConstructors = Collections.unmodifiableList(cvCtors);
@@ -610,7 +620,8 @@ final class PlayerUiMembers {
                         break;
                     }
                 }
-            } catch (Throwable ignored) {
+            } catch (Throwable failure) {
+                bridge.report("枚举音频播放器构造方法失败", failure);
             }
         }
         alertConstructor = alertCtor;
@@ -768,26 +779,40 @@ final class HostProfile {
                 m.getParameterTypes()[0].getName().endsWith("$Document"));
     }
 
-    static HostProfile discover(String packageName, ClassLoader classLoader, HostBridge.Logger logger) {
+    static HostProfile discover(String packageName, ClassLoader classLoader, ApplicationInfo app,
+                                HostBridge.Logger logger) {
         HostBridge bridge = new HostBridge(classLoader, logger);
         Class<?> buildConfig = bridge.loadClass("org.telegram.messenger.BuildConfig");
         Class<?> photoViewer = bridge.loadClass("org.telegram.ui.PhotoViewer");
         Class<?> mediaController = bridge.loadClass("org.telegram.messenger.MediaController");
 
-        Field viewerPlayer = bridge.findField(photoViewer, "videoPlayer");
-        Field viewerMessage = bridge.findField(photoViewer, "currentMessageObject");
-        boolean niagram1322 = PACKAGE_NIAGRAMX.equals(packageName) && buildConfig == null
-                && viewerPlayer != null && viewerPlayer.getType().getName().equals("klb")
-                && viewerMessage != null && viewerMessage.getType().getName().equals("qo6")
-                && bridge.findMethod(photoViewer, "N7", 0) != null
-                && bridge.findMethod(mediaController, "w", 0, m -> Modifier.isStatic(m.getModifiers())
-                        && m.getReturnType() == mediaController) != null;
-        if ((!niagram1322 && buildConfig == null) || photoViewer == null || mediaController == null) {
+        if (photoViewer == null || mediaController == null) {
             logger.log("宿主必需类不存在，停止安装 Hook", null);
             return null;
         }
+        Field viewerPlayer = bridge.findField(photoViewer, "videoPlayer");
+        Field viewerMessage = bridge.findField(photoViewer, "currentMessageObject");
+        boolean niagram1322 = PACKAGE_NIAGRAMX.equals(packageName) && buildConfig == null
+                && hasObfuscatedPlayerTypes(bridge, photoViewer, mediaController);
+        if (!niagram1322 && buildConfig == null) {
+            logger.log("Niagram 播放器结构未识别，停止安装 Hook", null);
+            return null;
+        }
+        if (niagram1322) {
+            Map<String, String> resolved = NiagramDexClasses.resolve(app, classLoader, logger);
+            if (resolved.isEmpty()) {
+                logger.log("Niagram 混淆类未完整解析，停止安装 Hook", null);
+                return null;
+            }
+            Map<String, String> names = new HashMap<>(resolved);
+            names.put("org.telegram.messenger.MessageObject", viewerMessage.getType().getName());
+            names.put("org.telegram.ui.Components.VideoPlayer", viewerPlayer.getType().getName());
+            bridge.bindClasses(names);
+            logger.log("Niagram 类型锚点：message=" + viewerMessage.getType().getName()
+                    + ", player=" + viewerPlayer.getType().getName(), null);
+        }
 
-        int code = niagram1322 ? 1322 : -1;
+        int code = -1;
         for (String field : new String[]{"VERSION_CODE", "OFFICIAL_VERSION_CODE"}) {
             Object val = bridge.getStaticField(buildConfig, field);
             if (val instanceof Number) {
@@ -796,7 +821,7 @@ final class HostProfile {
             }
         }
 
-        String name = niagram1322 ? "Niagram 1322 (DEX profile)" : null;
+        String name = niagram1322 ? "Niagram (R8 类型映射)" : null;
         for (String field : new String[]{"VERSION_NAME", "OFFICIAL_VERSION_NAME"}) {
             Object val = bridge.getStaticField(buildConfig, field);
             if (val instanceof String) {
@@ -831,10 +856,9 @@ final class HostProfile {
 
         Class<?> musicPlayerService = bridge.loadClass("org.telegram.messenger.MusicPlayerService");
         Class<?> pipRoundVideoView = bridge.loadClass("org.telegram.ui.Components.PipRoundVideoView");
-        Class<?> fileLoader = bridge.loadClass(niagram1322 ? "aw3" : "org.telegram.messenger.FileLoader");
+        Class<?> fileLoader = bridge.loadClass("org.telegram.messenger.FileLoader");
         Class<?> contextView = bridge.loadClass("org.telegram.ui.Components.FragmentContextView");
-        Class<?> audioPlayerAlert = bridge.loadClass(niagram1322
-                ? "org.telegram.ui.Components.r1" : "org.telegram.ui.Components.AudioPlayerAlert");
+        Class<?> audioPlayerAlert = bridge.loadClass("org.telegram.ui.Components.AudioPlayerAlert");
 
         return new HostProfile(
                 bridge,
@@ -857,6 +881,22 @@ final class HostProfile {
                 new PlayerUiMembers(bridge, contextView, audioPlayerAlert,
                         obfuscatedNames ? new NiagramXNames.FragmentContextView() : null, niagram1322)
         );
+    }
+
+    static boolean hasObfuscatedPlayerTypes(HostBridge bridge, Class<?> viewer, Class<?> controller) {
+        Field player = bridge.findField(viewer, "videoPlayer");
+        Field message = bridge.findField(viewer, "currentMessageObject");
+        if (player == null || message == null || player.getType() == message.getType()
+                || player.getType().isPrimitive() || message.getType().isPrimitive()) return false;
+        Field state = bridge.findField(player.getType(), "lastReportedPlaybackState");
+        Field ready = bridge.findField(player.getType(), "lastReportedPlayWhenReady");
+        return state != null && state.getType() == int.class
+                && ready != null && ready.getType() == boolean.class
+                && bridge.findField(message.getType(), "messageOwner") != null
+                && bridge.findField(message.getType(), "currentAccount") != null
+                && bridge.findMethodOrShape(controller, "getInstance", 0, method ->
+                        Modifier.isStatic(method.getModifiers()) && method.getParameterCount() == 0
+                                && method.getReturnType() == controller) != null;
     }
 
     int getSelectedAccount() {

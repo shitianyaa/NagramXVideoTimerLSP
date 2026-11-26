@@ -22,7 +22,7 @@ public final class TestMain {
     }
 
     public static void main(String[] args) {
-        System.out.println("=== 运行 NagramX Video Timer JVM 单元测试 ===");
+        System.out.println("=== 运行 NagramTimer JVM 单元测试 ===");
 
         testSessionDurationClamped();
         testSessionDisarmStopsTicking();
@@ -35,6 +35,9 @@ public final class TestMain {
         testLostPlaybackSession();
         testIdentityMask();
         HookRegressionTest.run();
+        NiagramClassResolutionTest.run();
+        AudioSleepTimerTest.run();
+        AudioTimerHostTest.run();
 
         System.out.println();
         if (failed == 0) {

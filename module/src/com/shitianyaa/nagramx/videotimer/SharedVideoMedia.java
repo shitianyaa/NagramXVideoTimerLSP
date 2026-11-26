@@ -31,8 +31,8 @@ final class SharedVideoMedia {
     SharedVideoMedia(HostBridge bridge, boolean obfuscated) {
         this.bridge = bridge;
         connections = bridge.loadClass("org.telegram.tgnet.ConnectionsManager");
-        mediaData = bridge.loadClass(obfuscated ? "pb6" : "org.telegram.messenger.MediaDataController");
-        notifications = bridge.loadClass(obfuscated ? "org.telegram.messenger.u1" : "org.telegram.messenger.NotificationCenter");
+        mediaData = bridge.loadClass("org.telegram.messenger.MediaDataController");
+        notifications = bridge.loadClass("org.telegram.messenger.NotificationCenter");
         accountAccessor = obfuscated ? "c0" : "getInstance";
         notificationsAccessor = obfuscated ? "g" : "getInstance";
         load = bridge.findMethod(mediaData, obfuscated ? "P0" : "loadMedia", 12, m -> {

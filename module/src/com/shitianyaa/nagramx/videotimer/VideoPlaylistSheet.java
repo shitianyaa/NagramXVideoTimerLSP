@@ -18,13 +18,24 @@ import android.widget.Toast;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /** Video rows use the host's thumbnail loader, rather than audio player cells. */
 final class VideoPlaylistSheet {
-    private static final ExecutorService FILE_CHECKS = Executors.newSingleThreadExecutor();
+    // 阿里规约 01-(七)4：显式限制工作线程和待处理文件检查，避免无界队列。
+    private static final int MAX_FILE_CHECKS = 64;
+    private static final ThreadPoolExecutor FILE_CHECKS = new ThreadPoolExecutor(
+            1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(MAX_FILE_CHECKS), task -> {
+                Thread worker = Executors.defaultThreadFactory().newThread(task);
+                worker.setName("video-file-check");
+                worker.setDaemon(true);
+                return worker;
+            }, new ThreadPoolExecutor.AbortPolicy());
     private final HostProfile host;
     private final HostBridge bridge;
     private final HostTheme theme;
@@ -38,8 +49,7 @@ final class VideoPlaylistSheet {
         this.theme = theme;
         this.strings = strings;
         this.logger = logger;
-        thumbnailClass = bridge.loadClass(host.niagram1322
-                ? "org.telegram.ui.Components.x2" : "org.telegram.ui.Components.BackupImageView");
+        thumbnailClass = bridge.loadClass("org.telegram.ui.Components.BackupImageView");
     }
 
     void show(Activity activity, ListenVideoAgent player) {
@@ -247,15 +257,19 @@ final class VideoPlaylistSheet {
             details.setTextColor(theme.activeColor(playing ? "dialogTextBlue2" : "dialogTextGray2"));
             details.setText(prefix);
             setContentDescription(title.getText() + ", " + time);
-            fileCheck = FILE_CHECKS.submit(() -> {
-                boolean local = isLocal(target);
-                details.post(() -> {
-                    if (message == target && this.playing == playing) {
-                        details.setText(prefix + " · " + strings.get(context,
-                                local ? "VideoStoredLocally" : "VideoNotStoredLocally"));
-                    }
+            try {
+                fileCheck = FILE_CHECKS.submit(() -> {
+                    boolean local = isLocal(target);
+                    details.post(() -> {
+                        if (message == target && this.playing == playing) {
+                            details.setText(prefix + " · " + strings.get(context,
+                                    local ? "VideoStoredLocally" : "VideoNotStoredLocally"));
+                        }
+                    });
                 });
-            });
+            } catch (RejectedExecutionException e) {
+                logger.log("文件检查队列已满，保留当前时长文案", e);
+            }
         }
 
         void clear() {
@@ -304,8 +318,8 @@ final class VideoPlaylistSheet {
     void prepareCover(View cover) {
         Object receiver = bridge.invokeNamed(cover, "getImageReceiver");
         if (receiver == null) return;
-        Object hostAnimations = bridge.invokeStatic(bridge.loadClass(host.niagram1322 ? "tu9"
-                : "org.telegram.messenger.SharedConfig"), host.niagram1322 ? "c" : "animationsEnabled");
+        Object hostAnimations = bridge.invokeStatic(bridge.loadClass("org.telegram.messenger.SharedConfig"),
+                host.niagram1322 ? "c" : "animationsEnabled");
         boolean enabled = android.animation.ValueAnimator.areAnimatorsEnabled() && !Boolean.FALSE.equals(hostAnimations);
         if (host.niagram1322) bridge.setField(receiver, "crossfadeWithOldImage", enabled);
         else bridge.invokeNamed(receiver, "setCrossfadeWithOldImage", enabled);

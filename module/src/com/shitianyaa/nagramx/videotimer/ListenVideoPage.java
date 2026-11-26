@@ -75,7 +75,7 @@ final class ListenVideoPage {
         this.strings = strings;
         bridge = host.bridge;
         setPause = host.niagram1322 ? "d" : "setPause";
-        Object drawable = bridge.newInstance(host.niagram1322 ? "dz7" : "org.telegram.ui.Components.PlayPauseDrawable", 28);
+        Object drawable = bridge.newInstance("org.telegram.ui.Components.PlayPauseDrawable", 28);
         playIcon = drawable instanceof Drawable
                 && bridge.findMethod(drawable.getClass(), setPause, 2, m ->
                         m.getParameterTypes()[0] == boolean.class && m.getParameterTypes()[1] == boolean.class) != null

@@ -17,6 +17,7 @@ import android.widget.TextView;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.lang.ref.WeakReference;
 
 /**
  * 定时关闭面板：使用宿主 BottomSheet 与 NumberPicker。
@@ -47,15 +48,28 @@ final class VideoSleepTimerSheet {
     private final HostBridge bridge;
     private final Class<?> bottomSheetClass;
     private final Class<?> numberPickerClass;
+    private final boolean audio;
+    private WeakReference<Dialog> currentSheet = new WeakReference<>(null);
 
     VideoSleepTimerSheet(HostProfile host, HostTheme theme, HostStrings strings, HostBridge.Logger logger) {
+        this(host, theme, strings, logger, false);
+    }
+
+    VideoSleepTimerSheet(HostProfile host, HostTheme theme, HostStrings strings, HostBridge.Logger logger, boolean audio) {
         this.host = host;
         this.theme = theme;
         this.strings = strings;
         this.logger = logger != null ? logger : (msg, t) -> {};
         this.bridge = host.bridge;
         this.bottomSheetClass = bridge.loadClass("org.telegram.ui.ActionBar.BottomSheet");
-        this.numberPickerClass = bridge.loadClass(host.niagram1322 ? "ka7" : "org.telegram.ui.Components.NumberPicker");
+        this.numberPickerClass = bridge.loadClass("org.telegram.ui.Components.NumberPicker");
+        this.audio = audio;
+    }
+
+    void dismiss() {
+        Dialog dialog = currentSheet.get();
+        if (dialog != null && dialog.isShowing()) dialog.dismiss();
+        currentSheet.clear();
     }
 
     boolean isAvailable() {
@@ -81,6 +95,7 @@ final class VideoSleepTimerSheet {
             bridge.invoke(sheet, setCustomView, content);
             bridge.invokeNamed(sheet, "fixNavigationBar");
             sheet.show();
+            currentSheet = new WeakReference<>(sheet);
             return true;
         } catch (Throwable t) {
             logger.log("弹出定时面板失败", t);
@@ -104,10 +119,12 @@ final class VideoSleepTimerSheet {
         root.addView(sectionLabel(context, strings.get(context, "VideoSleepTimerQuickChoices")), linear(context, MATCH, WRAP, 22, 18, 22, 0, -1));
         root.addView(presets(context, state, sheet, onPick), linear(context, MATCH, WRAP, 0, 10, 0, 0, -1));
 
-        root.addView(afterCurrentRow(context, state, sheet, onPick), linear(context, MATCH, 50, 12, 6, 12, 0, -1));
+        if (!audio) {
+            root.addView(afterCurrentRow(context, state, sheet, onPick), linear(context, MATCH, 50, 12, 6, 12, 0, -1));
+        }
 
         root.addView(sectionLabel(context, strings.get(context, "VideoSleepTimerCustom")), linear(context, MATCH, WRAP, 22, 14, 22, 0, -1));
-        root.addView(hint(context, strings.get(context, "VideoSleepTimerCustomHint")), linear(context, MATCH, WRAP, 22, 4, 22, 0, -1));
+        root.addView(hint(context, strings.get(context, audio ? "AudioSleepTimerCustomHint" : "VideoSleepTimerCustomHint")), linear(context, MATCH, WRAP, 22, 4, 22, 0, -1));
 
         PickerPair picker = new PickerPair(context, state.selectedMinutes);
         picker.attach(root);
@@ -270,6 +287,10 @@ final class VideoSleepTimerSheet {
             int m = Math.max(0, Math.min(59, initialMinutes % 60));
             hours = createPicker(context, 23, h, val -> strings.format(context, "VideoSleepTimerDurationHours", val));
             minutes = createPicker(context, 59, m, val -> strings.minutes(context, val));
+            if (isUsable()) {
+                syncMinuteRange(bridge, hours, minutes);
+                installHourListener();
+            }
         }
 
         boolean isUsable() {
@@ -298,6 +319,34 @@ final class VideoSleepTimerSheet {
             int h = (hVal instanceof Number) ? ((Number) hVal).intValue() : 0;
             int m = (mVal instanceof Number) ? ((Number) mVal).intValue() : 0;
             return h * 60 + m;
+        }
+
+        private void installHourListener() {
+            Method setter = bridge.findMethod(numberPickerClass, "setOnValueChangedListener", 1,
+                    method -> method.getParameterTypes()[0].isInterface());
+            if (setter == null) {
+                logger.log("定时面板小时联动不可用：缺少 NumberPicker 值变更监听接口", null);
+                return;
+            }
+            Class<?> listenerType = setter.getParameterTypes()[0];
+            try {
+                Object listener = Proxy.newProxyInstance(listenerType.getClassLoader(), new Class<?>[]{listenerType},
+                        (proxy, method, args) -> {
+                            if (method.getReturnType() == void.class && method.getParameterCount() == 3
+                                    && method.getParameterTypes()[1] == int.class
+                                    && method.getParameterTypes()[2] == int.class) {
+                                syncMinuteRange(bridge, hours, minutes);
+                                return null;
+                            }
+                            if ("hashCode".equals(method.getName())) return System.identityHashCode(proxy);
+                            if ("equals".equals(method.getName())) return proxy == args[0];
+                            if ("toString".equals(method.getName())) return "SleepTimerHourListener";
+                            return null;
+                        });
+                bridge.invoke(hours, setter, listener);
+            } catch (IllegalArgumentException | SecurityException failure) {
+                logger.log("创建定时面板小时联动监听失败", failure);
+            }
         }
 
         @SuppressLint("ClickableViewAccessibility")
@@ -366,6 +415,17 @@ final class VideoSleepTimerSheet {
             } catch (IllegalArgumentException | SecurityException t) {
                 logger.log("创建 NumberPicker.Formatter 代理失败", t);
             }
+        }
+    }
+
+    static void syncMinuteRange(HostBridge bridge, Object hours, Object minutes) {
+        Object value = bridge.invokeNamed(hours, "getValue");
+        int minimum = value instanceof Number && ((Number) value).intValue() > 0 ? 0 : 1;
+        Object current = bridge.invokeNamed(minutes, "getValue");
+        bridge.invokeNamed(minutes, "setMinValue", minimum);
+        bridge.invokeNamed(minutes, "setAllItemsCount", 60 - minimum);
+        if (current instanceof Number && ((Number) current).intValue() < minimum) {
+            bridge.invokeNamed(minutes, "setValue", minimum);
         }
     }
 

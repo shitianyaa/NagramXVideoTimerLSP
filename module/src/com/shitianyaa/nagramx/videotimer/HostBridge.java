@@ -5,7 +5,10 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 宿主对象与类反射调用边界。
@@ -22,6 +25,7 @@ final class HostBridge {
 
     private final ClassLoader classLoader;
     private final Logger logger;
+    private volatile Map<String, String> classNames = Collections.emptyMap();
 
     HostBridge(ClassLoader classLoader, Logger logger) {
         this.classLoader = classLoader;
@@ -30,13 +34,21 @@ final class HostBridge {
 
     Class<?> loadClass(String name) {
         try {
-            return Class.forName(name, false, classLoader);
+            return Class.forName(classNames.getOrDefault(name, name), false, classLoader);
         } catch (ClassNotFoundException e) {
             return null;
         } catch (Throwable t) {
             logger.log("加载类 " + name + " 失败", t);
             return null;
         }
+    }
+
+    void bindClasses(Map<String, String> names) {
+        classNames = Collections.unmodifiableMap(new HashMap<>(names));
+    }
+
+    void report(String message, Throwable failure) {
+        logger.log(message, failure);
     }
 
     Method findMethod(Class<?> type, String name, int parameterCount, MethodPredicate predicate) {
@@ -182,6 +194,7 @@ final class HostBridge {
                 makeAccessible(f);
                 return f;
             } catch (NoSuchFieldException ignored) {
+                continue;
             } catch (Throwable t) {
                 logger.log("查找 " + current.getName() + "." + name + " 字段失败", t);
                 return null;

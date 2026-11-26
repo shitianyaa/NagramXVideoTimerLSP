@@ -89,7 +89,7 @@ android {
             java.setSrcDirs(listOf(rootProject.file("module/src")))
             res.setSrcDirs(listOf(rootProject.file("module/res")))
             resources.setSrcDirs(listOf(rootProject.file("module/meta")))
-            assets.setSrcDirs(emptyList<String>())
+            assets.setSrcDirs(listOf(rootProject.file("module/assets")))
         }
         getByName("test") {
             java.setSrcDirs(emptyList<String>())
@@ -111,4 +111,31 @@ android {
 
 dependencies {
     compileOnly(files(rootProject.file("module/lib/api-102.jar")))
+    implementation(libs.dexkit)
+}
+
+// The standalone Java regression runner compiles the same source as the APK.
+val hookTestLibraries by configurations.creating
+dependencies.add(hookTestLibraries.name, libs.dexkit.get())
+tasks.register("prepareHookTestLibraries") {
+    val output = rootProject.layout.projectDirectory.dir("module/build/test-libs")
+    inputs.files(hookTestLibraries)
+    outputs.dir(output)
+    doLast {
+        for (library in hookTestLibraries) {
+            if (library.extension == "aar") {
+                copy {
+                    from(zipTree(library))
+                    include("classes.jar")
+                    rename("classes.jar", "${library.nameWithoutExtension}.jar")
+                    into(output)
+                }
+            } else if (library.extension == "jar") {
+                copy {
+                    from(library)
+                    into(output)
+                }
+            }
+        }
+    }
 }

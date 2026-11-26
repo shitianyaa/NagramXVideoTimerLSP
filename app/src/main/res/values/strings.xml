@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">NagramX Video Timer</string>
-    <string name="app_description">NagramX 后台视频定时播放模块</string>
+    <string name="app_name">Nagram 定时播放</string>
+    <string name="app_description">为 NagramX / NiagramX 提供听视频、后台播放与音视频定时关闭。</string>
     <string name="module_api">API %1$d</string>
     <string name="module_scope">作用域：%1$s</string>
     <string name="module_status_ready">LSPosed 服务已连接</string>

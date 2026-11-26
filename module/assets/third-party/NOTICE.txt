@@ -1,0 +1,12 @@
+DexKit 2.3.0
+Project and corresponding source: https://github.com/LuckyPray/DexKit/tree/2.3.0
+Native Core copyright (C) 2022 LuckyPray; see the accompanying license text.
+The Java/Kotlin library and native Core are used without source modifications.
+License texts are included alongside this file as dexkit-APACHE-2.0.txt and
+dexkit-LGPL-3.0.txt. Native libraries remain separate shared objects.
+
+Transitive dependencies:
+- FlatBuffers Java 23.5.26: Apache-2.0, https://github.com/google/flatbuffers
+- Kotlin standard library 1.5.0: Apache-2.0, https://github.com/JetBrains/kotlin
+- JetBrains annotations 13.0: Apache-2.0, https://github.com/JetBrains/java-annotations
+- Rikka NDK cxx 1.2.0: https://github.com/RikkaW/ndk-cxx

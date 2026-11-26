@@ -21,6 +21,12 @@ else
   JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 fi
 API_W="$(native_path "$MOD/lib/api-102.jar")"
+if command -v cygpath >/dev/null 2>&1; then
+  "$ROOT/gradlew.bat" -p "$(native_path "$ROOT")" :app:prepareHookTestLibraries --quiet
+else
+  bash "$ROOT/gradlew" -p "$ROOT" :app:prepareHookTestLibraries --quiet
+fi
+LIBS_W="$(native_path "$MOD/build/test-libs")/*"
 
 mkdir -p "$OUT"
 SRCS=()
@@ -28,8 +34,8 @@ while IFS= read -r -d '' f; do SRCS+=("$(native_path "$f")"); done < <(find "$MO
 
 "$JAVAC" -J-Duser.language=en -J-Duser.country=US \
   -encoding UTF-8 -source 8 -target 8 -nowarn \
-  -cp "$AJ_W$SEP$API_W" -d "$(native_path "$OUT")" "${SRCS[@]}"
+  -cp "$AJ_W$SEP$API_W$SEP$LIBS_W" -d "$(native_path "$OUT")" "${SRCS[@]}"
 
 "$JAVA" -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 \
-  -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 \
-  -cp "$(native_path "$OUT")$SEP$AJ_W$SEP$API_W" com.shitianyaa.nagramx.videotimer.TestMain
+  -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 "-Dtest.output=$(native_path "$MOD/build")" \
+  -cp "$(native_path "$OUT")$SEP$AJ_W$SEP$API_W$SEP$LIBS_W" com.shitianyaa.nagramx.videotimer.TestMain

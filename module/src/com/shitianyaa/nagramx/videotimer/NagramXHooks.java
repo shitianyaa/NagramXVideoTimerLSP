@@ -12,6 +12,7 @@ import com.shitianyaa.nagramx.videotimer.core.Xp;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,19 +33,26 @@ final class NagramXHooks {
     private final PhotoViewerAgent photo;
     private final NotificationDresser notification;
     private final PlayerUiAgent playerUi;
+    private final AudioSleepTimerHooks audioTimer;
 
-    private final ThreadLocal<Integer> suppressCleanup = new ThreadLocal<Integer>() {
-        @Override
-        protected Integer initialValue() {
+    private final ThreadLocal<Integer> suppressCleanup = new ThreadLocal<>();
+    private final ThreadLocal<Integer> changingTrack = new ThreadLocal<>();
+
+    private static int guardDepth(ThreadLocal<Integer> guard) {
+        Integer value = guard.get();
+        if (value == null) {
+            guard.remove();
             return 0;
         }
-    };
-    private final ThreadLocal<Integer> changingTrack = new ThreadLocal<Integer>() {
-        @Override
-        protected Integer initialValue() {
-            return 0;
-        }
-    };
+        return value;
+    }
+
+    private static void leaveGuard(ThreadLocal<Integer> guard) {
+        int remaining = guardDepth(guard) - 1;
+        // 阿里规约 01-(七)：最外层作用域退出时移除线程局部状态。
+        if (remaining <= 0) guard.remove();
+        else guard.set(remaining);
+    }
 
     NagramXHooks(XposedModule module, HostProfile host) {
         this.module = module;
@@ -60,9 +68,11 @@ final class NagramXHooks {
         this.notification = new NotificationDresser(host, session, strings, logger);
         this.listen = new ListenVideoAgent(host, media, session, theme, strings, photo, playerUi, logger);
         this.photo.setListenVideo(listen);
+        this.audioTimer = new AudioSleepTimerHooks(host, media, theme, strings, logger);
     }
 
     void install() {
+        audioTimer.install();
         if (host.hasCompleteNativeTimerUi()) {
             if (host.canInjectTimerMenu()) {
                 hookMenuInjection();
@@ -112,6 +122,7 @@ final class NagramXHooks {
         hookIdentityQueries();
         hookNotificationDressing();
         hookTelegramMediaSession();
+        hookPlatformMediaSession();
         hookMusicMetadata();
 
         hookMiniPlayer();
@@ -127,6 +138,10 @@ final class NagramXHooks {
         if (host.canDressNotification()) {
             Xp.log("通知栏已知差异：" + notification.getDressedNotificationGaps());
         }
+    }
+
+    void dispose() {
+        audioTimer.dispose();
     }
 
     private VideoBackgroundSession.ProbeResult probePlayback() {
@@ -372,7 +387,7 @@ final class NagramXHooks {
 
             // A track change must release the previous player. Only the module's
             // timer survives this cleanup; ChatActivity cleanup is a separate scope.
-            changingTrack.set(changingTrack.get() + 1);
+            changingTrack.set(guardDepth(changingTrack) + 1);
             Object result;
             try {
                 result = host.niagram1322 ? chain.proceed() : MessageIdentityMask.around(
@@ -380,7 +395,7 @@ final class NagramXHooks {
                         (MessageIdentityMask.Action<Object>) chain::proceed
                 );
             } finally {
-                changingTrack.set(changingTrack.get() - 1);
+                leaveGuard(changingTrack);
             }
             if (Boolean.TRUE.equals(result)) {
                 if (host.niagram1322 && listen.owns(target)) playerUi.notifyPlaybackStarted();
@@ -415,11 +430,11 @@ final class NagramXHooks {
             int playlistSize = (listObj instanceof List) ? ((List<?>) listObj).size() : 0;
             Method playNext = host.media.playNextMessageWithoutOrder;
             if (playlistSize > 1 && playNext != null) {
-                changingTrack.set(changingTrack.get() + 1);
+                changingTrack.set(guardDepth(changingTrack) + 1);
                 try {
                     host.bridge.invoke(chain.getThisObject(), playNext, true);
                 } finally {
-                    changingTrack.set(changingTrack.get() - 1);
+                    leaveGuard(changingTrack);
                 }
                 return null;
             }
@@ -432,7 +447,7 @@ final class NagramXHooks {
         Method method = host.cancelLoadFileByDocument;
         if (method == null) return;
         intercept(method, chain -> {
-            if (!session.isBackgroundActive() || changingTrack.get() > 0) return chain.proceed();
+            if (!session.isBackgroundActive() || guardDepth(changingTrack) > 0) return chain.proceed();
             Object[] args = chain.getArgs().toArray();
             if (args.length == 0 || args[0] == null) return chain.proceed();
             Object target = args[0];
@@ -454,9 +469,9 @@ final class NagramXHooks {
             Object[] args = chain.getArgs().toArray();
             boolean stopService = (args.length > 1 && Boolean.TRUE.equals(args[1]));
             boolean transferToPhotoViewer = (args.length > 3 && Boolean.TRUE.equals(args[3]));
-            boolean switching = changingTrack.get() > 0;
+            boolean switching = guardDepth(changingTrack) > 0;
             if (session.isBackgroundActive() && !transferToPhotoViewer &&
-                    ((suppressCleanup.get() > 0 && (!switching || stopService))
+                    ((guardDepth(suppressCleanup) > 0 && (!switching || stopService))
                     || (host.niagram1322 && switching && stopService && isChatTextureCleanup()))) {
                 Xp.log("跳过 ChatActivity 对后台视频的清理");
                 return null;
@@ -495,6 +510,31 @@ final class NagramXHooks {
                     return null;
                 }
                 return chain.proceed();
+            });
+        }
+    }
+
+    private void hookPlatformMediaSession() {
+        if (host.niagram1322) {
+            hookPlatformMediaSession(host.bridge.loadClass(NiagramDexClasses.PLATFORM_MEDIA_CALLBACK));
+        }
+    }
+
+    private void hookPlatformMediaSession(Class<?> callbackClass) {
+        if (callbackClass == null) {
+            Xp.log("未解析到系统媒体回调，视频上一条/下一条入口未安装");
+            return;
+        }
+        for (String name : new String[]{"onSkipToNext", "onSkipToPrevious"}) {
+            Method method = host.bridge.findMethod(callbackClass, name, 0,
+                    candidate -> !Modifier.isStatic(candidate.getModifiers())
+                            && candidate.getReturnType() == void.class);
+            if (method == null) continue;
+            intercept(method, chain -> {
+                if (listen.current() == null) return chain.proceed();
+                boolean changed = listen.skip("onSkipToNext".equals(name));
+                Xp.log("系统媒体视频切换：" + name + ", changed=" + changed);
+                return null;
             });
         }
     }
@@ -630,7 +670,7 @@ final class NagramXHooks {
                 });
             }
         }
-        if (host.musicService.sessionCallbackClass == null) {
+        if (host.musicService.sessionCallbackClass == null && !host.niagram1322) {
             Xp.log("未找到 MediaSession 回调匿名类，锁屏上一首/下一首对视频可能无效");
         }
 
@@ -863,11 +903,11 @@ final class NagramXHooks {
                 if (!session.isActive() || !host.isVideoMessage(target)) return chain.proceed();
                 // ChatActivity stops the old media player before opening a different
                 // video. This is a replacement, not the user's close action.
-                changingTrack.set(changingTrack.get() + 1);
+                changingTrack.set(guardDepth(changingTrack) + 1);
                 try {
                     return chain.proceed();
                 } finally {
-                    changingTrack.set(changingTrack.get() - 1);
+                    leaveGuard(changingTrack);
                     Object viewer = host.bridge.invoke(null, host.photo.getInstance);
                     Object current = host.messageOf(viewer);
                     if (current != null && host.messageIdOf(current) == host.messageIdOf(target)
@@ -885,14 +925,14 @@ final class NagramXHooks {
         for (Method method : cleans) {
             if (method != null) {
                 intercept(method, chain -> {
-                    suppressCleanup.set(suppressCleanup.get() + 1);
+                    suppressCleanup.set(guardDepth(suppressCleanup) + 1);
                     try {
                         if (method == ui.updateMessagesVisiblePart && session.isBackgroundActive()) {
                             return playerUi.wrapChatScroll(chain::proceed);
                         }
                         return chain.proceed();
                     } finally {
-                        suppressCleanup.set(suppressCleanup.get() - 1);
+                        leaveGuard(suppressCleanup);
                     }
                 });
             }
@@ -948,7 +988,8 @@ final class NagramXHooks {
         } else {
             try {
                 bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-            } catch (Throwable ignored) {
+            } catch (Throwable failure) {
+                logger.log("解码通知缩略图失败", failure);
             }
         }
         if (bitmap == null) return;

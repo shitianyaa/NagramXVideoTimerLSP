@@ -14,6 +14,7 @@ public class ModuleMain extends XposedModule {
 
     private boolean isMainProcess = false;
     private boolean hooksInstalled = false;
+    private NagramXHooks hooks;
 
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
@@ -33,11 +34,13 @@ public class ModuleMain extends XposedModule {
         }
 
         try {
-            HostProfile profile = HostProfile.discover(param.getPackageName(), param.getClassLoader(), (msg, t) -> Xp.log(msg, t));
+            HostProfile profile = HostProfile.discover(param.getPackageName(), param.getClassLoader(),
+                    param.getApplicationInfo(), (msg, t) -> Xp.log(msg, t));
             if (profile == null) return;
             Xp.log("宿主：" + HostProfile.hostDisplayName(param.getPackageName()) +
                     " (" + param.getPackageName() + ")");
-            new NagramXHooks(this, profile).install();
+            hooks = new NagramXHooks(this, profile);
+            hooks.install();
             hooksInstalled = true;
         } catch (Throwable t) {
             Xp.log("安装后台视频定时 Hook 失败", t);
@@ -48,6 +51,10 @@ public class ModuleMain extends XposedModule {
     public boolean onHotReloading(HotReloadingParam param) {
         Xp.bind(this);
         Xp.log("正在执行模块热重载，卸载旧 Hook...");
+        if (hooks != null) {
+            hooks.dispose();
+            hooks = null;
+        }
         Xp.unhookAll();
         hooksInstalled = false;
         return true;

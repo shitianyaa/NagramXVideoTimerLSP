@@ -47,6 +47,8 @@ final class HostStrings {
         put("VideoNotStoredLocally", "未完整下载", "Not fully downloaded");
         put("VideoPlaylistOpenFailed", "无法打开所选视频", "Could not open this video");
         put("VideoSleepTimer", "定时关闭", "Sleep Timer");
+        put("AudioSleepTimerCustomHint", "选择音频继续播放的时长，暂停和缓冲时停止计时", "Choose listening time; pauses and buffering do not count");
+        put("AudioSleepTimerFinished", "已暂停音频", "Audio paused");
         put("VideoSleepTimerOff", "关闭", "Off");
         put("VideoSleepTimerAfterCurrent", "当前视频播放结束后", "After current video");
         put("VideoSleepTimerAfterCurrentSet", "将在当前视频播放结束后停止", "Stops after the current video");

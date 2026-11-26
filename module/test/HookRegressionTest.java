@@ -193,9 +193,69 @@ final class HookRegressionTest {
                 pageResults.equals(Collections.singletonList(false)) && !listen.isLoadingMedia());
     }
 
+    private void verifyPlatformMediaSkip() throws Throwable {
+        MessageObject first = new MessageObject(15);
+        MessageObject older = new MessageObject(8);
+        MessageObject newer = new MessageObject(22);
+        start(first, older);
+        Field listenField = NagramXHooks.class.getDeclaredField("listen");
+        listenField.setAccessible(true);
+        ListenVideoAgent listen = (ListenVideoAgent) listenField.get(hooks);
+        Field origin = ListenVideoAgent.class.getDeclaredField("origin");
+        origin.setAccessible(true);
+        origin.set(listen, first);
+        Method merge = ListenVideoAgent.class.getDeclaredMethod("merge", List.class);
+        merge.setAccessible(true);
+        merge.invoke(listen, Arrays.asList(older, first, newer));
+        Method installer = NagramXHooks.class.getDeclaredMethod("hookPlatformMediaSession", Class.class);
+        installer.setAccessible(true);
+        installer.invoke(hooks, PlatformMediaCallback.class);
+        PlatformMediaCallback shared = new PlatformMediaCallback();
+        PlatformMediaCallback service = new PlatformMediaCallback();
+        call(shared, "onSkipToNext", new Class<?>[]{});
+        TestMain.check("系统共享会话下一条使用听视频队列", controller.playingMessageObject == newer);
+        call(service, "onSkipToPrevious", new Class<?>[]{});
+        TestMain.check("系统服务会话上一条使用同一队列", controller.playingMessageObject == first);
+        TestMain.check("系统切换不重复执行宿主音乐分支", shared.next == 0 && service.previous == 0);
+        TestMain.check("系统切换保留当前定时", session.isArmed() && "10:00".equals(listen.timerStatus(null)));
+        call(service, "onSkipToPrevious", new Class<?>[]{});
+        call(service, "onSkipToPrevious", new Class<?>[]{});
+        TestMain.check("系统上一条在队列边界停止且不交给音乐分支",
+                controller.playingMessageObject == older && service.previous == 0);
+        older.music = true;
+        call(shared, "onSkipToNext", new Class<?>[]{});
+        TestMain.check("普通音乐的系统切换透传给宿主", shared.next == 1 && controller.playingMessageObject == older);
+        older.music = false;
+        session.end();
+        call(service, "onSkipToPrevious", new Class<?>[]{});
+        TestMain.check("听视频会话外系统事件透传", service.previous == 1);
+        NiagramDexClasses.Spec spec = NiagramDexClasses.Spec.forMethods("callback", "java.lang.Object",
+                "onSkipToNext", "onSkipToPrevious");
+        TestMain.check("系统回调结构校验接受无参 void 切换方法", spec.accepts(PlatformMediaCallback.class));
+        TestMain.check("系统回调结构校验拒绝错误返回类型", !spec.accepts(InvalidPlatformMediaCallback.class));
+        Method leave = NagramXHooks.class.getDeclaredMethod("leaveGuard", ThreadLocal.class);
+        leave.setAccessible(true);
+        for (String name : new String[]{"changingTrack", "suppressCleanup"}) {
+            Field field = NagramXHooks.class.getDeclaredField(name);
+            field.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            ThreadLocal<Integer> guard = (ThreadLocal<Integer>) field.get(hooks);
+            try {
+                guard.set(2);
+                leave.invoke(null, guard);
+                TestMain.check("嵌套退出保留外层保护：" + name, Integer.valueOf(1).equals(guard.get()));
+                leave.invoke(null, guard);
+                TestMain.check("最外层退出移除保护状态：" + name, guard.get() == null);
+            } finally {
+                guard.remove();
+            }
+        }
+    }
+
     static void run() {
         try {
             new HookRegressionTest().verifyListenQueue();
+            new HookRegressionTest().verifyPlatformMediaSkip();
             HookRegressionTest pausedUi = new HookRegressionTest();
             Method sharedInstaller = NagramXHooks.class.getDeclaredMethod("hookTelegramMediaSession", Class.class, Class.class);
             sharedInstaller.setAccessible(true);
@@ -643,6 +703,15 @@ class ProgressView {
     int backgroundState;
     void setBackgroundState(int state, boolean animated, boolean animateIcon) { backgroundState = state; }
     void setIndexedAlpha(int index, float alpha, boolean animated) {}
+}
+class PlatformMediaCallback {
+    int next, previous;
+    void onSkipToNext() { next++; }
+    void onSkipToPrevious() { previous++; }
+}
+class InvalidPlatformMediaCallback {
+    boolean onSkipToNext() { return true; }
+    void onSkipToPrevious() {}
 }
 class SharedMediaCallback {
     int next, previous;

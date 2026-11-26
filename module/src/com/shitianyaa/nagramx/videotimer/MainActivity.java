@@ -31,8 +31,9 @@ public class MainActivity extends Activity {
         layout.addView(status);
         setContentView(layout);
 
-        status.setText("NagramX Video Timer\n\n"
-                + "请在 LSPosed 中启用模块并设置作用域\n\n"
+        status.setText(getApplicationInfo().loadLabel(getPackageManager()) + "\n"
+                + "听视频 · 后台播放 · 音乐定时\n\n"
+                + "在 LSPosed 中启用模块、设置作用域后，重启目标应用。\n\n"
                 + targetStatus());
     }
 
@@ -57,7 +58,7 @@ public class MainActivity extends Activity {
                     versionName,
                     versionCode));
         }
-        sb.append("\n已验证宿主：NagramX 12.9.2-4335a2e (1260)；NiagramX 待真机验证\n")
+        sb.append("\n已验证宿主：NagramX 12.9.2-4335a2e (1260)；NiagramX 13.2.2 (1322)\n")
                 .append("不限制 versionCode，运行时按类和方法签名探测兼容性");
         return sb.toString();
     }
