@@ -6,17 +6,32 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.view.HapticFeedbackConstants;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewConfiguration;
+import android.view.ViewParent;
+import android.view.animation.Interpolator;
+import android.view.animation.PathInterpolator;
+import android.widget.ScrollView;
 
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 取色与度量：提供与宿主 PhotoViewer 保持一致的深色外观。
+ * 取色与度量：提供与宿主保持一致的配色、对比度校验与动效曲线。
  */
 final class HostTheme {
 
     public static final int WHITE = 0xFFFFFFFF;
+    public static final int DARK_INK = 0xFF121212;
     public static final int TRANSPARENT = 0;
+    private static final int DEFAULT_DARK_ACCENT = 0xFF1A9CFF;
+    private static final int DEFAULT_LIGHT_ACCENT = 0xFF168ACD;
+
+    private static final class EaseOutQuintHolder {
+        static final Interpolator INSTANCE = new PathInterpolator(0.23f, 1f, 0.32f, 1f);
+    }
 
     private final HostBridge bridge;
     private final Class<?> themeClass;
@@ -163,5 +178,201 @@ final class HostTheme {
 
     Drawable rippleTransparent(Context context, float radiusDp, int ripple) {
         return rippleRect(context, radiusDp, TRANSPARENT, ripple);
+    }
+
+    Drawable rippleRoundBorderRect(Context context, float radiusDp, int background,
+                                   int strokeWidthDp, int strokeColor, int ripple) {
+        GradientDrawable content = roundRect(context, radiusDp, background);
+        if (strokeWidthDp > 0) {
+            content.setStroke(dp(context, strokeWidthDp), strokeColor);
+        }
+        return new RippleDrawable(
+                ColorStateList.valueOf(ripple),
+                content,
+                roundRect(context, radiusDp, WHITE)
+        );
+    }
+
+    int accentColor(int background) {
+        int fallback = isLight(background) ? DEFAULT_LIGHT_ACCENT : DEFAULT_DARK_ACCENT;
+        return resolveAccent(
+                background,
+                activeColor("dialogTextBlue2"),
+                activeColor("windowBackgroundWhiteBlueText"),
+                activeColor("featuredStickers_addButton"),
+                fallback
+        );
+    }
+
+    int primaryButtonFill(int background) {
+        return resolvePrimaryFill(
+                background,
+                activeColor("featuredStickers_addButton"),
+                accentColor(background),
+                isLight(background) ? DEFAULT_LIGHT_ACCENT : DEFAULT_DARK_ACCENT
+        );
+    }
+
+    int primaryButtonText(int fillColor) {
+        return resolveButtonText(fillColor, activeColor("featuredStickers_buttonText"));
+    }
+
+    int resolveDarkAccent(int fallback) {
+        return resolveAccent(
+                0xFF1F1F1F,
+                activeColor("dialogTextBlue2"),
+                activeColor("windowBackgroundWhiteBlueText"),
+                activeColor("featuredStickers_addButton"),
+                fallback
+        );
+    }
+
+    static Interpolator easeOutQuint() {
+        return EaseOutQuintHolder.INSTANCE;
+    }
+
+    static void tapHaptic(View view) {
+        if (view == null) return;
+        try {
+            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    static void tickHaptic(View view) {
+        if (view == null) return;
+        try {
+            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    static boolean isLight(int color) {
+        return relativeLuminance(color) > 0.5;
+    }
+
+    static double relativeLuminance(int color) {
+        double r = linearChannel(((color >>> 16) & 0xFF) / 255.0);
+        double g = linearChannel(((color >>> 8) & 0xFF) / 255.0);
+        double b = linearChannel((color & 0xFF) / 255.0);
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    }
+
+    private static double linearChannel(double channel) {
+        return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+    }
+
+    static double contrastRatio(int first, int second) {
+        double l1 = relativeLuminance(first);
+        double l2 = relativeLuminance(second);
+        double lighter = Math.max(l1, l2);
+        double darker = Math.min(l1, l2);
+        return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    static int resolveAccent(int background, int primaryCandidate, int secondaryCandidate,
+                             int tertiaryCandidate, int fallback) {
+        int[] candidates = {primaryCandidate, secondaryCandidate, tertiaryCandidate};
+        for (int candidate : candidates) {
+            if (isUsableFill(candidate, background, 2.6)) {
+                return candidate;
+            }
+        }
+        return fallback;
+    }
+
+    static int resolvePrimaryFill(int background, int buttonFillCandidate,
+                                  int accentCandidate, int fallback) {
+        if (isUsableFill(buttonFillCandidate, background, 2.6)) {
+            return buttonFillCandidate;
+        }
+        if (isUsableFill(accentCandidate, background, 2.6)) {
+            return accentCandidate;
+        }
+        return fallback;
+    }
+
+    static int resolveButtonText(int fillColor, int preferredTextColor) {
+        double fillLuminance = relativeLuminance(fillColor);
+        if (isOpaqueEnough(preferredTextColor)) {
+            if (fillLuminance <= 0.52 && relativeLuminance(preferredTextColor) >= 0.75) {
+                return preferredTextColor;
+            }
+            if (contrastRatio(preferredTextColor, fillColor) >= 3.5) {
+                return preferredTextColor;
+            }
+        }
+        return fillLuminance > 0.52 ? DARK_INK : WHITE;
+    }
+
+    Drawable createTimerIcon(Context context, int color) {
+        return ListenVideoIcons.timer(context, color);
+    }
+
+    View createDragHandle(Context context, int color) {
+        View handle = new View(context);
+        handle.setBackground(roundRect(context, 2, color));
+        return handle;
+    }
+
+    static ScrollView pullDownScrollView(Context context) {
+        ScrollView view = new ScrollView(context) {
+            private final int touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+            private float startX;
+            private float startY;
+            private boolean decided;
+            private boolean childDisallowed;
+
+            @Override
+            public void requestDisallowInterceptTouchEvent(boolean disallowIntercept) {
+                if (disallowIntercept) {
+                    childDisallowed = true;
+                    decided = true;
+                }
+                super.requestDisallowInterceptTouchEvent(disallowIntercept);
+            }
+
+            @Override
+            public boolean dispatchTouchEvent(MotionEvent event) {
+                ViewParent parent = getParent();
+                int action = event.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN) {
+                    startX = event.getX();
+                    startY = event.getY();
+                    decided = false;
+                    childDisallowed = false;
+                    if (parent != null) {
+                        // Hold BottomSheet swipe-to-dismiss until drag direction is resolved.
+                        parent.requestDisallowInterceptTouchEvent(true);
+                    }
+                } else if (action == MotionEvent.ACTION_MOVE && !decided && !childDisallowed && parent != null) {
+                    float dx = event.getX() - startX;
+                    float dy = event.getY() - startY;
+                    if (Math.abs(dy) > touchSlop || Math.abs(dx) > touchSlop) {
+                        decided = true;
+                        boolean pullDownAtTop = dy > touchSlop && dy > Math.abs(dx)
+                                && getScrollY() <= 0 && !canScrollVertically(-1);
+                        parent.requestDisallowInterceptTouchEvent(!pullDownAtTop);
+                    }
+                } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    decided = false;
+                    childDisallowed = false;
+                    if (parent != null) {
+                        parent.requestDisallowInterceptTouchEvent(false);
+                    }
+                }
+                return super.dispatchTouchEvent(event);
+            }
+        };
+        view.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        return view;
+    }
+
+    private static boolean isOpaqueEnough(int color) {
+        return ((color >>> 24) & 0xFF) >= 200;
+    }
+
+    private static boolean isUsableFill(int color, int background, double minContrast) {
+        return isOpaqueEnough(color) && contrastRatio(color, background) >= minContrast;
     }
 }

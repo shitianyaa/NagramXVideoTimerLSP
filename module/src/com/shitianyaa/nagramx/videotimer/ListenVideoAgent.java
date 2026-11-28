@@ -65,10 +65,13 @@ final class ListenVideoAgent {
     }
 
     View addMenuItem(Object viewer, Activity activity, Object menu, Method addSubItem) {
-        int icon = activity.getResources().getIdentifier("msg_media", "drawable", activity.getPackageName());
-        Object item = bridge.invoke(menu, addSubItem, MENU_ID, icon, strings.get(activity, "ListenVideo"));
+        String label = strings.get(activity, "ListenVideo");
+        Object item = bridge.invoke(menu, addSubItem, MENU_ID, 0, label);
         if (!(item instanceof View)) return null;
         View view = (View) item;
+        HostListenControls.applyMenuIcon(bridge, view, label,
+                ListenVideoIcons.listen(activity, 0xFFFAFAFA),
+                () -> activity.getResources().getIdentifier("msg_media", "drawable", activity.getPackageName()));
         bridge.invokeNamed(view, "setColors", 0xFFFAFAFA, 0xFFFAFAFA);
         bridge.invokeNamed(view, "setSelectorColor", 0x0FFFFFFF);
         view.setOnClickListener(v -> {

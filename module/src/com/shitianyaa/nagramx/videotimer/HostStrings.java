@@ -141,4 +141,19 @@ final class HostStrings {
             return format(context, "VideoSleepTimerDurationMinutes", remaining);
         }
     }
+
+    /** 预设按钮单行展示：整小时显示「1 小时」，非整小时保持「90 分钟」防横滑裁切。 */
+    String presetDuration(Context context, int minutes) {
+        if (minutes >= 60 && minutes % 60 == 0) {
+            return duration(context, minutes);
+        }
+        return format(context, "VideoSleepTimerDurationMinutes", minutes);
+    }
+
+    static String formatDurationClock(long ms) {
+        long seconds = Math.max(0L, ms / 1000L);
+        return seconds >= 3600L
+                ? String.format(Locale.ROOT, "%d:%02d:%02d", seconds / 3600L, (seconds / 60L) % 60L, seconds % 60L)
+                : String.format(Locale.ROOT, "%d:%02d", seconds / 60L, seconds % 60L);
+    }
 }

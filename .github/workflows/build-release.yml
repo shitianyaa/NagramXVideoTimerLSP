@@ -32,16 +32,13 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
-
       - name: Validate release tag
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
           set -euo pipefail
-          version_code="$(sed -n 's/^MODULE_VERSION_CODE=//p' gradle.properties | tr -d '\r')"
-          version_name="$(sed -n 's/^MODULE_VERSION_NAME=//p' gradle.properties | tr -d '\r')"
+          version_code="$(sed -n 's/^MODULE_VERSION_CODE=//p' module.properties | tr -d '\r')"
+          version_name="$(sed -n 's/^MODULE_VERSION_NAME=//p' module.properties | tr -d '\r')"
           expected_tag="${version_code}-${version_name}"
           if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
             echo "Tag $GITHUB_REF_NAME does not match module version $expected_tag" >&2
@@ -70,43 +67,54 @@ jobs:
             -alias "$RELEASE_KEY_ALIAS" >/dev/null
           echo "RELEASE_KEYSTORE_PATH=$keystore" >> "$GITHUB_ENV"
 
-      - name: Make Gradle wrapper executable
+      - name: Make build scripts executable
         shell: bash
-        run: chmod +x gradlew
+        run: chmod +x build.sh module/test/run_test.sh
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
 
-      - name: Install regression test SDK
+      - name: Install Android SDK platform and build-tools
         shell: bash
-        run: sdkmanager "platforms;android-34"
+        run: |
+          set -euo pipefail
+          compile_sdk="$(sed -n 's/^COMPILE_SDK=//p' module.properties | tr -d '\r')"
+          build_tools="$(sed -n 's/^BUILD_TOOLS=//p' module.properties | tr -d '\r')"
+          sdkmanager "platforms;android-${compile_sdk:-37.0}" "build-tools;${build_tools:-37.0.0}"
 
       - name: Java Hook regression checks
         shell: bash
-        run: AJ_W="$ANDROID_HOME/platforms/android-34/android.jar" bash module/test/run_test.sh
+        run: bash module/test/run_test.sh
 
-      - name: Build and lint
+      - name: Build and verify APKs
         shell: bash
         env:
           REQUIRE_RELEASE_SIGNING: ${{ startsWith(github.ref, 'refs/tags/') && 'true' || 'false' }}
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleDebug :app:assembleRelease :app:lintDebug --stacktrace
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^MODULE_VERSION_NAME=//p' module.properties | tr -d '\r')"
+          build_tools="$(sed -n 's/^BUILD_TOOLS=//p' module.properties | tr -d '\r')"
+          bash build.sh --debug
+          bash build.sh --release
+          "$ANDROID_HOME/build-tools/${build_tools:-37.0.0}/zipalign" -c -P 16 4 "build/NagramTimer-v$version-debug.apk"
+          "$ANDROID_HOME/build-tools/${build_tools:-37.0.0}/zipalign" -c -P 16 4 "build/NagramTimer-v$version-release.apk"
 
       - name: Prepare APK artifacts
         shell: bash
         run: |
           set -euo pipefail
-          version="$(sed -n 's/^MODULE_VERSION_NAME=//p' gradle.properties | tr -d '\r')"
+          version="$(sed -n 's/^MODULE_VERSION_NAME=//p' module.properties | tr -d '\r')"
           mkdir -p artifacts/debug
-          cp app/build/outputs/apk/debug/app-debug.apk "artifacts/debug/NagramTimer-v$version-debug.apk"
+          cp "build/NagramTimer-v$version-debug.apk" "artifacts/debug/NagramTimer-v$version-debug.apk"
 
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             mkdir -p artifacts/release
-            cp app/build/outputs/apk/release/app-release.apk "artifacts/release/NagramTimer-v$version-release.apk"
+            cp "build/NagramTimer-v$version-release.apk" "artifacts/release/NagramTimer-v$version-release.apk"
 
             # Release notes are produced here so both the build and the release
             # job consume one CHANGELOG-derived source instead of duplicating the
@@ -188,7 +196,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          version="$(sed -n 's/^MODULE_VERSION_NAME=//p' gradle.properties | tr -d '\r')"
+          version="$(sed -n 's/^MODULE_VERSION_NAME=//p' module.properties | tr -d '\r')"
           notes_file="release/release-notes.md"
 
           if [[ ! -s "$notes_file" ]]; then

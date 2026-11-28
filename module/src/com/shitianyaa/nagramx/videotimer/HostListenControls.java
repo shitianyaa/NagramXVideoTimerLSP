@@ -1,12 +1,14 @@
 package com.shitianyaa.nagramx.videotimer;
 
 import android.content.Context;
+import android.graphics.PorterDuff;
 import android.graphics.drawable.Drawable;
 import android.view.View;
 import android.widget.ImageView;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.function.IntSupplier;
 
 final class HostListenControls {
     private static final float[] SPEEDS = {0.5f, 1f, 1.2f, 1.5f, 1.7f, 2f};
@@ -21,16 +23,18 @@ final class HostListenControls {
     private final Context context;
     private final HostProfile host;
     private final HostBridge bridge;
+    private final HostTheme theme;
     private final HostStrings strings;
     private final int tint;
     private final int accent;
     private Object speedIcon;
     private View[] speedOptions;
 
-    HostListenControls(Context context, HostProfile host, HostStrings strings, int tint, int accent) {
+    HostListenControls(Context context, HostProfile host, HostTheme theme, HostStrings strings, int tint, int accent) {
         this.context = context;
         this.host = host;
         this.bridge = host.bridge;
+        this.theme = theme;
         this.strings = strings;
         this.tint = tint;
         this.accent = accent;
@@ -48,10 +52,13 @@ final class HostListenControls {
             if (host.niagram1322) bridge.invokeNamed(view, "k", tint, layer);
             else bridge.invokeNamed(view, "setLayerColor", layer, tint);
         }
+        view.setColorFilter(tint, PorterDuff.Mode.SRC_IN);
         view.setScaleType(ImageView.ScaleType.CENTER);
+        view.setBackground(theme.rippleTransparent(context, 28, theme.alpha(tint, 24)));
         if (next) view.setRotation(180f);
         view.setContentDescription(strings.get(context, next ? "ListenVideoNext" : "ListenVideoPrevious"));
         view.setOnClickListener(button -> {
+            HostTheme.tickHaptic(button);
             bridge.invokeNamed(view, host.niagram1322 ? "f" : "playAnimation");
             action.run();
         });
@@ -59,10 +66,27 @@ final class HostListenControls {
     }
 
     View action(String icon, String name, Runnable action) {
+        return actionDrawable(context.getDrawable(resource(icon, "drawable")), name, action);
+    }
+
+    View action(Drawable icon, String name, Runnable action) {
+        return actionDrawable(icon, name, action);
+    }
+
+    void setActionIconColor(View view, int color) {
+        if (view != null) {
+            bridge.invokeNamed(view, "setIconColor", color);
+        }
+    }
+
+    private View actionDrawable(Drawable icon, String name, Runnable action) {
         View view = menu(name);
         if (view.getVisibility() == View.GONE) return view;
-        bridge.invokeNamed(view, "setIcon", resource(icon, "drawable"));
-        view.setOnClickListener(button -> action.run());
+        bridge.invokeNamed(view, "setIcon", icon);
+        view.setOnClickListener(button -> {
+            HostTheme.tapHaptic(button);
+            action.run();
+        });
         return view;
     }
 
@@ -90,6 +114,7 @@ final class HostListenControls {
                 View option = (View) item;
                 speedOptions[i] = option;
                 option.setOnClickListener(view -> {
+                    HostTheme.tickHaptic(view);
                     bridge.invokeNamed(menu, "closeSubMenu");
                     player.setSpeed(value);
                 });
@@ -98,17 +123,26 @@ final class HostListenControls {
         // addSubItem initializes the host popup layout lazily.
         bridge.invokeNamed(menu, "setShowedFromBottom", true);
         menu.setOnClickListener(v -> {
-            updateSpeed(player.speed());
+            HostTheme.tapHaptic(v);
+            updateSpeed(player.speed(), false);
             bridge.invokeNamed(menu, "toggleSubMenu");
         });
         return menu;
     }
 
     void updateSpeed(float speed) {
-        bridge.invokeNamed(speedIcon, host.niagram1322 ? "c" : "setValue", speed, false);
+        updateSpeed(speed, false);
+    }
+
+    void updateSpeed(float speed, boolean animated) {
+        if (speedIcon != null) {
+            boolean customSpeed = Math.abs(speed - 1f) >= 0.05f;
+            bridge.invokeNamed(speedIcon, host.niagram1322 ? "b" : "setColor", customSpeed ? accent : tint);
+            bridge.invokeNamed(speedIcon, host.niagram1322 ? "c" : "setValue", speed, animated);
+        }
         if (speedOptions == null) return;
         for (int i = 0; i < speedOptions.length; i++) {
-            bridge.invokeNamed(speedOptions[i], "setEnabledByColor", Float.compare(speed, SPEEDS[i]) == 0, tint, accent);
+            bridge.invokeNamed(speedOptions[i], "setEnabledByColor", Math.abs(speed - SPEEDS[i]) < 0.05f, tint, accent);
         }
     }
 
@@ -144,12 +178,13 @@ final class HostListenControls {
         return view;
     }
 
-    void updateProgress(View view, float position) {
-        bridge.invokeNamed(view, host.niagram1322 ? "j" : "setProgress", position, false);
+    void updateProgress(View view, float position, boolean animated) {
+        bridge.invokeNamed(view, host.niagram1322 ? "j" : "setProgress", position, animated);
     }
 
     private View menu(String label) {
-        Object item = bridge.newInstance("org.telegram.ui.ActionBar.ActionBarMenuItem", context, null, 0, tint, false, null);
+        int selectorColor = theme.alpha(tint, 24);
+        Object item = bridge.newInstance("org.telegram.ui.ActionBar.ActionBarMenuItem", context, null, selectorColor, tint, false, null);
         if (!(item instanceof View)) return hidden();
         View view = (View) item;
         view.setContentDescription(strings.get(context, label));
@@ -158,6 +193,33 @@ final class HostListenControls {
 
     private int resource(String name, String type) {
         return context.getResources().getIdentifier(name, type, context.getPackageName());
+    }
+
+    /** Applies a vector menu icon while falling back cleanly on forks without 3-arg setTextAndIcon. */
+    static void applyMenuIcon(HostBridge bridge, View row, CharSequence label,
+                              Drawable icon, IntSupplier fallbackIconRes) {
+        if (bridge == null || row == null) {
+            return;
+        }
+        Method setTextAndIcon3 = bridge.findMethod(row.getClass(), "setTextAndIcon", 3, method -> {
+            Class<?>[] params = method.getParameterTypes();
+            return CharSequence.class.isAssignableFrom(params[0])
+                    && params[1] == int.class
+                    && Drawable.class.isAssignableFrom(params[2]);
+        });
+        if (setTextAndIcon3 != null) {
+            bridge.invoke(row, setTextAndIcon3, label, 0, icon);
+            return;
+        }
+        int fallback = fallbackIconRes != null ? fallbackIconRes.getAsInt() : 0;
+        if (fallback != 0) {
+            bridge.invokeNamed(row, "setTextAndIcon", label, fallback);
+        }
+        Method setIcon = bridge.findMethod(row.getClass(), "setIcon", 1,
+                method -> Drawable.class.isAssignableFrom(method.getParameterTypes()[0]));
+        if (setIcon != null) {
+            bridge.invoke(row, setIcon, icon);
+        }
     }
 
     private View hidden() {

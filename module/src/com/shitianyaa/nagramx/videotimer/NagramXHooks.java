@@ -65,6 +65,7 @@ final class NagramXHooks {
         this.media = new MediaControllerAgent(host, session, logger);
         this.playerUi = new PlayerUiAgent(host, session, strings, logger);
         this.photo = new PhotoViewerAgent(host, media, session, strings, playerUi, logger);
+        this.photo.setTheme(this.theme);
         this.notification = new NotificationDresser(host, session, strings, logger);
         this.listen = new ListenVideoAgent(host, media, session, theme, strings, photo, playerUi, logger);
         this.photo.setListenVideo(listen);
@@ -136,7 +137,10 @@ final class NagramXHooks {
                 ", 通知=" + host.canDressNotification() +
                 ", 缺失=" + host.describeGaps());
         if (host.canDressNotification()) {
-            Xp.log("通知栏已知差异：" + notification.getDressedNotificationGaps());
+            String gaps = notification.getDressedNotificationGaps();
+            if (!gaps.isEmpty()) {
+                Xp.log("通知栏已知差异：" + gaps);
+            }
         }
     }
 

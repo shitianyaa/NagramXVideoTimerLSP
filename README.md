@@ -26,7 +26,7 @@
 
 安装后请到 LSPosed 管理模块。模块没有桌面入口，播放和定时都在 NagramX 或 NiagramX 里操作。
 
-以下入口按 **1.3.0** 编写。用模块仓库正式包安装的用户，从 1.1.1 起可直接覆盖升级。1.0.0 至 1.1.0 的旧包需要先卸载。
+以下入口按 **1.3.1** 编写。用模块仓库正式包安装的用户，从 1.1.1 起可直接覆盖升级。1.0.0 至 1.1.0 的旧包需要先卸载。
 
 ## 功能入口
 
@@ -39,7 +39,7 @@
 
 ### 听视频
 
-点「听视频」后会从当前进度继续播。这个页面可以调倍速、拖进度、切换上一条或下一条，右下角列表按钮能打开当前聊天的共享视频。按返回键离开页面后可以继续听，点聊天顶部播放栏就能回来。想接着看画面，点封面或「返回画面」。
+点「听视频」后会以圆角浮动卡片形式从当前进度继续播。页面支持调倍速、拖进度、切换上一条或下一条，右下角列表按钮能打开当前聊天的共享视频（自动居中定位并高亮当前条）。点卡片上方暗色区域、左上角向下箭头、系统返回键或顶部下拉都能离开并继续后台收听，点聊天顶部播放栏就能回来；想接着看画面，点封面或「返回画面」。
 
 点右上角的定时按钮，可以选时长，也可以选「当前视频播放结束后」。如果设的是时长，切换视频后会接着倒计时。宿主有内置视频定时时，听视频页会使用宿主的定时功能。
 
@@ -79,11 +79,20 @@
 
 ## 构建与反馈
 
+项目不依赖 Gradle，只需安装 **JDK（8 或以上）** 与 **Android SDK**（按 [module.properties](module.properties) 默认使用 `platforms;android-37.0` 与 `build-tools;37.0.0`，通过环境变量 `ANDROID_HOME` 或 `JAVA_HOME` 自动定位）。首次运行会自动从 [module/deps.manifest](module/deps.manifest) 下载并校验 DexKit 依赖，由 [ModuleBuild.java](module/tools/ModuleBuild.java) 统一完成编译、16KB 页对齐（`zipalign`）与签名验证：
+
 ```powershell
-.\gradlew.bat :app:assembleDebug :app:assembleRelease :app:lintDebug
+.\build.ps1
+.\build.ps1 -Release
 .\module\test\run_test.ps1
 ```
 
-`build.ps1` 和 `build.sh` 会把测试包放到 `build/NagramTimer-v<版本>-debug.apk`。Debug 使用开发签名，正式包的签名配置见 [keystore.properties.example](keystore.properties.example)。标签格式为 `versionCode-versionName`，个人仓库的 CI 按标签构建，模块仓库的更新单独进行。
+```bash
+bash build.sh
+bash build.sh --release
+bash module/test/run_test.sh
+```
+
+`build.ps1` 与 `build.sh` 会分别输出到 `build/NagramTimer-v<版本>-debug.apk` 与 `build/NagramTimer-v<版本>-release.apk`。Debug 默认使用本地开发签名；Release 正式包的签名配置见 [keystore.properties.example](keystore.properties.example)。发布标签格式为 `versionCode-versionName`（例如 `10301-1.3.1`），个人仓库的 CI 按标签构建并提取 [CHANGELOG.md](CHANGELOG.md) 对应版本说明，模块仓库的更新单独进行。
 
 [更新日志](CHANGELOG.md) · [问题反馈](https://github.com/shitianyaa/NagramXVideoTimerLSP/issues) · [Apache License 2.0](LICENSE)

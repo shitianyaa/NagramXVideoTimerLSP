@@ -39,6 +39,8 @@ final class PlayerUiAgent {
 
     private final Map<Object, Boolean> contextViews = Collections.synchronizedMap(new WeakHashMap<>());
     private int lastCountdownSecond = -1;
+    private int lastCountdownMode = -1;
+    private Object lastSubtitleMessage = null;
 
     private Object lastProbedMessage = null;
     private boolean lastProbedIsVideo = false;
@@ -177,8 +179,9 @@ final class PlayerUiAgent {
         if (context == null) return;
         Object message = session.isBackgroundActive() ? backgroundVideo() : null;
         String text = null;
+        int mode = -1;
         if (message != null) {
-            int mode = session.getMode();
+            mode = session.getMode();
             if (mode == VideoBackgroundSession.MODE_AFTER_CURRENT) {
                 lastCountdownSecond = -1;
                 text = strings.get(context, "VideoSleepTimerAfterCurrent");
@@ -195,13 +198,16 @@ final class PlayerUiAgent {
         if (text == null) {
             lastCountdownSecond = -1;
         }
+        boolean modeOrTrackChanged = mode != lastCountdownMode || message != lastSubtitleMessage;
+        lastCountdownMode = mode;
+        lastSubtitleMessage = message;
 
         List<Object> views;
         synchronized (contextViews) {
             views = new ArrayList<>(contextViews.keySet());
         }
         for (Object view : views) {
-            applySubtitle(view, message, text, relayout);
+            applySubtitle(view, message, text, relayout, modeOrTrackChanged);
         }
     }
 
@@ -219,7 +225,7 @@ final class PlayerUiAgent {
         }
     }
 
-    private void applySubtitle(Object view, Object message, String text, boolean relayout) {
+    private void applySubtitle(Object view, Object message, String text, boolean relayout, boolean modeOrTrackChanged) {
         boolean twoLine = text != null;
         boolean wasTwoLine;
         synchronized (contextViews) {
@@ -249,23 +255,46 @@ final class PlayerUiAgent {
             boolean sideMenued = Boolean.TRUE.equals(bridge.getField(view, ui.isSideMenuedField));
             int rightMargin = 36 + (sideMenued ? 64 : 0);
             if (twoLine) {
-                if (relayout || !wasTwoLine) {
+                boolean layoutChanged = relayout || !wasTwoLine;
+                if (layoutChanged) {
                     if (title != null) {
                         frame(context, title, 20, 37, 0, rightMargin);
-                        if (host.niagram1322) {
-                            updateVideoTitle(context, title, message);
-                        }
                     }
                     int subtitleRightMargin = rightMargin + (host.niagram1322 ? 44 : 0);
                     frame(context, subtitle, 18, 37, 18, subtitleRightMargin);
                 }
-                bridge.invoke(subtitle, ui.miniPlayerSetText, text, false);
-                subtitle.setVisibility(View.VISIBLE);
+                if (host.niagram1322 && title != null && (layoutChanged || modeOrTrackChanged)) {
+                    updateVideoTitle(context, title, message, wasTwoLine);
+                }
+                subtitle.animate().cancel();
+                bridge.invoke(subtitle, ui.miniPlayerSetText, text, wasTwoLine && modeOrTrackChanged);
+                if (!wasTwoLine || subtitle.getVisibility() != View.VISIBLE) {
+                    subtitle.setAlpha(0f);
+                    subtitle.setVisibility(View.VISIBLE);
+                    subtitle.animate().alpha(1f).setDuration(180L).setInterpolator(HostTheme.easeOutQuint()).start();
+                } else {
+                    subtitle.setAlpha(1f);
+                }
             } else {
                 if (title != null) {
                     frame(context, title, 36, 37, 0, rightMargin);
                 }
-                subtitle.setVisibility(View.GONE);
+                subtitle.animate().cancel();
+                if (subtitle.getVisibility() == View.VISIBLE) {
+                    subtitle.animate()
+                            .alpha(0f)
+                            .setDuration(140L)
+                            .setInterpolator(HostTheme.easeOutQuint())
+                            .withEndAction(() -> {
+                                if (!Boolean.TRUE.equals(contextViews.get(view))) {
+                                    subtitle.setVisibility(View.GONE);
+                                    subtitle.setAlpha(1f);
+                                }
+                            })
+                            .start();
+                } else {
+                    subtitle.setVisibility(View.GONE);
+                }
             }
             contextViews.replace(view, twoLine);
         } catch (RuntimeException e) {
@@ -273,14 +302,14 @@ final class PlayerUiAgent {
         }
     }
 
-    private void updateVideoTitle(Context context, View title, Object message) {
+    private void updateVideoTitle(Context context, View title, Object message, boolean animated) {
         String text = NotificationDresser.captionFirstLine(host, message);
         if (text == null) {
             text = strings.get(context, "AttachVideo") + " · " + host.messageIdOf(message);
         }
         Object label = bridge.invokeNamed(title, "getTextView");
         if (!(label instanceof TextView) || !TextUtils.equals(text, ((TextView) label).getText())) {
-            bridge.invoke(title, ui.miniPlayerSetText, text, false);
+            bridge.invoke(title, ui.miniPlayerSetText, text, animated);
         }
     }
 

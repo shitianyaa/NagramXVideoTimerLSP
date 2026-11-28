@@ -1,16 +1,30 @@
 $ErrorActionPreference = 'Stop'
-$projectRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$moduleRoot = Join-Path $projectRoot 'module'
-$testClasses = Join-Path $moduleRoot 'build/test-classes'
-$androidJar = if ($env:AJ_W) { $env:AJ_W } else { 'D:\AndroidSDK\platforms\android-34\android.jar' }
-$jdkBin = if ($env:JDK_W) { $env:JDK_W } else { 'D:\JAVA\bin' }
-$apiJar = Join-Path $moduleRoot 'lib/api-102.jar'
-& (Join-Path $projectRoot 'gradlew.bat') -p $projectRoot :app:prepareHookTestLibraries --quiet
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$testLibraries = Join-Path $moduleRoot 'build/test-libs/*'
-New-Item -ItemType Directory -Path $testClasses -Force | Out-Null
-$sources = @(Get-ChildItem (Join-Path $moduleRoot 'src'), (Join-Path $moduleRoot 'test') -Recurse -Filter *.java | ForEach-Object FullName)
-& (Join-Path $jdkBin 'javac.exe') '-J-Duser.language=en' -encoding UTF-8 -source 8 -target 8 -nowarn -cp "$androidJar;$apiJar;$testLibraries" -d $testClasses $sources
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& (Join-Path $jdkBin 'java.exe') '-Dsun.stdout.encoding=UTF-8' '-Dsun.stderr.encoding=UTF-8' "-Dtest.output=$moduleRoot/build" "-cp" "$testClasses;$androidJar;$apiJar;$testLibraries" com.shitianyaa.nagramx.videotimer.TestMain
-exit $LASTEXITCODE
+$projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+
+function Resolve-JdkBin {
+    if ($env:JDK_W -and (Test-Path -LiteralPath (Join-Path $env:JDK_W 'javac.exe'))) { return $env:JDK_W }
+    if ($env:JAVA_HOME -and (Test-Path -LiteralPath (Join-Path $env:JAVA_HOME 'bin/javac.exe'))) { return (Join-Path $env:JAVA_HOME 'bin') }
+    $fallback = 'D:\JAVA\bin'
+    if (Test-Path -LiteralPath (Join-Path $fallback 'javac.exe')) { return $fallback }
+    $cmd = Get-Command javac -ErrorAction SilentlyContinue
+    if ($cmd) { return (Split-Path -Parent $cmd.Source) }
+    throw 'Missing JDK javac (set JDK_W or JAVA_HOME)'
+}
+
+$jdkBin = Resolve-JdkBin
+$toolSrc = Join-Path $projectRoot 'module/tools/ModuleBuild.java'
+$toolsOut = Join-Path $projectRoot 'module/build/tools'
+$toolClass = Join-Path $toolsOut 'tool/ModuleBuild.class'
+if (-not (Test-Path -LiteralPath $toolClass) -or ((Get-Item -LiteralPath $toolSrc).LastWriteTimeUtc -gt (Get-Item -LiteralPath $toolClass).LastWriteTimeUtc)) {
+    New-Item -ItemType Directory -Path $toolsOut -Force | Out-Null
+    & (Join-Path $jdkBin 'javac.exe') '-J-Duser.language=en' -encoding UTF-8 -d $toolsOut $toolSrc
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
+Push-Location $projectRoot
+try {
+    & (Join-Path $jdkBin 'java.exe') '-Dsun.stdout.encoding=UTF-8' '-Dsun.stderr.encoding=UTF-8' -cp $toolsOut tool.ModuleBuild test
+    exit $LASTEXITCODE
+} finally {
+    Pop-Location
+}
