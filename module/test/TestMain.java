@@ -31,6 +31,8 @@ public final class TestMain {
         testMarkBackgroundActiveDoesNotDisarm();
         testPauseFreezesCountdown();
         testFormattedRemainingTime();
+        testDurationClockAndThemeContrast();
+        testPlaylistCalculationsAndCache();
         testProbeResultEnded();
         testLostPlaybackSession();
         testIdentityMask();
@@ -237,6 +239,79 @@ public final class TestMain {
 
         session.arm(VideoBackgroundSession.MODE_DURATION, 65, 17);
         check("65分钟格式化为 1:05:00", "1:05:00".equals(session.getFormattedRemainingTime()));
+    }
+
+    private static void testDurationClockAndThemeContrast() {
+        System.out.println("\n[UI 工具] 统一时长格式化与主题按钮对比度解析");
+        check("0 毫秒格式化为 0:00", "0:00".equals(HostStrings.formatDurationClock(0L)));
+        check("59 秒格式化为 0:59", "0:59".equals(HostStrings.formatDurationClock(59_000L)));
+        check("1 小时整格式化为 1:00:00", "1:00:00".equals(HostStrings.formatDurationClock(3_600_000L)));
+        check("超过 1 小时格式化为 1:12:05", "1:12:05".equals(HostStrings.formatDurationClock(4_325_000L)));
+        check("ListenVideoPage.time 复用共享格式", "1:12:05".equals(ListenVideoPage.time(4_325_000L)));
+
+        int darkSheetBg = 0xFF1F1F1F;
+        int brokenButtonBg = 0xFF242424;
+        int greenAccent = 0xFF4BB368;
+        int brokenBlueText = 0xFF4C75BC;
+        int resolvedFill = HostTheme.resolvePrimaryFill(darkSheetBg, brokenButtonBg, greenAccent, 0xFF1A9CFF);
+        check("低对比暗灰按钮背景回退到主题强调色", resolvedFill == greenAccent);
+        int resolvedText = HostTheme.resolveButtonText(resolvedFill, brokenBlueText);
+        check("低对比蓝字在绿色主按钮上回退为高对比白色", resolvedText == HostTheme.WHITE);
+
+        int pastelFill = 0xFFA8DAB5;
+        int monetDarkInk = 0xFF1A1C19;
+        check("浅色粉彩主按钮保留高对比深色文字",
+                HostTheme.resolveButtonText(pastelFill, monetDarkInk) == monetDarkInk);
+        check("浅色粉彩按钮遇到白色首选文字时自动切深色文字",
+                HostTheme.resolveButtonText(pastelFill, HostTheme.WHITE) == HostTheme.DARK_INK);
+        check("标准深海蓝主按钮保留白色文字",
+                HostTheme.resolveButtonText(0xFF1A9CFF, HostTheme.WHITE) == HostTheme.WHITE);
+        check("主题强调色识别拒绝透明色并回退有效高亮色",
+                HostTheme.resolveAccent(darkSheetBg, 0x004BB368, greenAccent, 0xFF1A9CFF, 0xFF1A9CFF) == greenAccent);
+    }
+
+    private static void testPlaylistCalculationsAndCache() {
+        System.out.println("\n[播放列表] 同步窗口缓冲、当前项居中定位与本地状态缓存");
+        check("顶部边界上缓冲不低于 0", VideoPlaylistSheet.firstVisibleIndex(0, 88) == 0);
+        check("向下滚动后保留上方 2 行缓冲", VideoPlaylistSheet.firstVisibleIndex(88 * 5 + 20, 88) == 3);
+        check("向下滚动后保留下方 2 行缓冲并夹紧总数",
+                VideoPlaylistSheet.endVisibleIndex(88 * 2, 300, 88, 20) == 8);
+        check("列表末尾下缓冲不超出队列总长度",
+                VideoPlaylistSheet.endVisibleIndex(88 * 15, 440, 88, 20) == 20);
+
+        check("列表未超出视口时不滚动居中", VideoPlaylistSheet.centeredScrollTop(3, 88, 352, 440) == 0);
+        check("第 0 项居中位置夹紧到顶部 0", VideoPlaylistSheet.centeredScrollTop(0, 88, 2000, 440) == 0);
+        check("中间项严格居中于视口", VideoPlaylistSheet.centeredScrollTop(10, 88, 2000, 440) == 10 * 88 - 176);
+        check("尾部项夹紧到最大可滚偏移", VideoPlaylistSheet.centeredScrollTop(22, 88, 2024, 440) == 2024 - 440);
+
+        java.util.Map<Integer, Boolean> cache = new java.util.HashMap<>();
+        cache.put(101, false);
+        check("宿主 mediaExists 为 true 时优先判定已缓存",
+                Boolean.TRUE.equals(VideoPlaylistSheet.knownLocalStatus(cache, 101, true, false)));
+        check("未标明已存在时命中会话缓存结果 false",
+                Boolean.FALSE.equals(VideoPlaylistSheet.knownLocalStatus(cache, 101, false, false)));
+        check("未入缓存的条目返回 null 交由后台校验",
+                VideoPlaylistSheet.knownLocalStatus(cache, 202, false, false) == null);
+        check("有效 messageId 为 0 时不误读缓存",
+                VideoPlaylistSheet.knownLocalStatus(cache, 0, false, false) == null);
+
+        check("听视频弹窗保留顶部暗色留白高度",
+                ListenVideoPage.sheetMaxHeight(2400, 288, 720) == 2112);
+        check("可用高度偏小时不超出现有视口",
+                ListenVideoPage.sheetMaxHeight(600, 288, 720) == 600);
+        check("听视频竖屏下保底高度覆盖定时弹窗层级且不超上限",
+                ListenVideoPage.sheetPortraitMinHeight(2592, 2400, 1680) == Math.round(2592 * 0.84f));
+        check("听视频矮屏竖屏保底高度夹紧在最大可用高度内",
+                ListenVideoPage.sheetPortraitMinHeight(1800, 1512, 1680) == 1512);
+        check("高屏竖屏定时滚轮展开7项且可滑高度加高到252dp",
+                VideoSleepTimerSheet.pickerItemCount(904, false) == 7
+                        && VideoSleepTimerSheet.pickerHeightDp(904, false) == 252);
+        check("紧凑竖屏定时滚轮保持5项和180dp避免溢出",
+                VideoSleepTimerSheet.pickerItemCount(640, false) == 5
+                        && VideoSleepTimerSheet.pickerHeightDp(640, false) == 180);
+        check("矮横屏定时滚轮收紧为3项和126dp",
+                VideoSleepTimerSheet.pickerItemCount(406, true) == 3
+                        && VideoSleepTimerSheet.pickerHeightDp(406, true) == 126);
     }
 
     private static void testProbeResultEnded() {

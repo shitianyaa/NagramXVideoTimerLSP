@@ -3,6 +3,7 @@ package com.shitianyaa.nagramx.videotimer;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.util.SparseArray;
@@ -17,7 +18,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 import java.util.ArrayDeque;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -58,17 +61,24 @@ final class VideoPlaylistSheet {
             Object object = bridge.newInstance(type, (Context) activity, false, null);
             if (!(object instanceof Dialog)) throw new IllegalStateException("Host BottomSheet unavailable");
             Dialog sheet = (Dialog) object;
-            // The list owns vertical drags, even when it has reached the top.
-            bridge.invokeNamed(sheet, "setCanDismissWithSwipe", false);
+            bridge.invokeNamed(sheet, "setCanDismissWithSwipe", true);
             LinearLayout content = new LinearLayout(activity);
             content.setOrientation(LinearLayout.VERTICAL);
-            content.setPadding(dp(activity, 16), dp(activity, 18), dp(activity, 16), dp(activity, 16));
+            content.setPadding(0, dp(activity, 10), 0, dp(activity, 16));
+            View handle = theme.createDragHandle(activity, theme.alpha(theme.activeColor("dialogTextGray2"), 0x70));
+            LinearLayout.LayoutParams handleSize = new LinearLayout.LayoutParams(dp(activity, 36), dp(activity, 4));
+            handleSize.gravity = Gravity.CENTER_HORIZONTAL;
+            handleSize.bottomMargin = dp(activity, 10);
+            content.addView(handle, handleSize);
             TextView heading = text(activity, strings.get(activity, "VideoPlaylist"), 20, "dialogTextBlack");
             heading.setTypeface(theme.bold());
+            heading.setPadding(dp(activity, 16), 0, dp(activity, 16), 0);
             content.addView(heading, new LinearLayout.LayoutParams(-1, dp(activity, 44)));
 
-            QueueViewport viewport = new QueueViewport(activity, player, sheet);
-            content.addView(viewport.scroll, new LinearLayout.LayoutParams(-1, dp(activity, 440)));
+            int screenHeight = activity.getResources().getDisplayMetrics().heightPixels;
+            int maxHeight = Math.min(dp(activity, 440), Math.max(dp(activity, 220), (int) (screenHeight * 0.62f)));
+            QueueViewport viewport = new QueueViewport(activity, player, sheet, maxHeight);
+            content.addView(viewport.scroll, new LinearLayout.LayoutParams(-1, maxHeight));
             viewport.updateQueue();
             sheet.setOnDismissListener(dialog -> viewport.clear());
             if (bridge.findMethod(type, "setCustomView", 1) == null) throw new IllegalStateException("Host setCustomView unavailable");
@@ -93,30 +103,35 @@ final class VideoPlaylistSheet {
         private final int maxHeight;
         private final SparseArray<VideoRow> visible = new SparseArray<>();
         private final ArrayDeque<VideoRow> available = new ArrayDeque<>();
-        private final Runnable render = () -> renderAt(scrollPosition());
+        private final Map<Integer, Boolean> localCache = new HashMap<>();
         private List<Object> queue = Collections.emptyList();
         private int viewportHeight;
         private int pendingScroll = -1;
+        private boolean initialScrolled;
 
-        QueueViewport(Activity activity, ListenVideoAgent player, Dialog sheet) {
+        QueueViewport(Activity activity, ListenVideoAgent player, Dialog sheet, int maxHeight) {
             this.player = player;
             this.sheet = sheet;
             rowHeight = dp(activity, 88);
             footerHeight = dp(activity, 48);
-            maxHeight = dp(activity, 440);
-            scroll = new ScrollView(activity);
+            this.maxHeight = maxHeight;
+            scroll = HostTheme.pullDownScrollView(activity);
             scroll.setNestedScrollingEnabled(false);
+            scroll.setVerticalScrollBarEnabled(true);
             content = new FrameLayout(activity);
             scroll.addView(content);
             more = text(activity, strings.get(activity, "ListenVideoMore"), 15, "dialogTextBlue2");
             more.setGravity(Gravity.CENTER);
             more.setBackground(theme.rippleTransparent(activity, 6, theme.activeColor("listSelector")));
-            content.addView(more, new FrameLayout.LayoutParams(-1, footerHeight, Gravity.TOP));
-            more.setOnClickListener(view -> loadNext());
-            scroll.setOnScrollChangeListener((view, x, y, oldX, oldY) -> {
-                scroll.removeCallbacks(render);
-                scroll.post(render);
+            FrameLayout.LayoutParams moreParams = new FrameLayout.LayoutParams(-1, footerHeight, Gravity.TOP);
+            moreParams.leftMargin = dp(activity, 16);
+            moreParams.rightMargin = dp(activity, 16);
+            content.addView(more, moreParams);
+            more.setOnClickListener(view -> {
+                HostTheme.tickHaptic(view);
+                loadNext();
             });
+            scroll.setOnScrollChangeListener((view, x, y, oldX, oldY) -> renderAt(Math.max(0, y)));
         }
 
         private int scrollPosition() {
@@ -128,7 +143,22 @@ final class VideoPlaylistSheet {
             int index = top / rowHeight;
             int anchor = index < queue.size() ? host.messageIdOf(queue.get(index)) : 0;
             queue = player.queue();
-            if (anchor != 0) {
+            boolean canLoad = player.canLoadMore();
+            int tail = queue.size() * rowHeight;
+            int height = tail + (canLoad ? footerHeight : 0);
+            viewportHeight = Math.min(maxHeight, height);
+            if (!initialScrolled) {
+                initialScrolled = true;
+                Object current = player.current();
+                int playingIndex = -1;
+                for (int i = 0; i < queue.size(); i++) {
+                    if (player.sameMessage(queue.get(i), current)) {
+                        playingIndex = i;
+                        break;
+                    }
+                }
+                top = centeredScrollTop(playingIndex, rowHeight, height, viewportHeight);
+            } else if (anchor != 0) {
                 for (int i = 0; i < queue.size(); i++) {
                     if (host.messageIdOf(queue.get(i)) == anchor) {
                         top = i * rowHeight + top % rowHeight;
@@ -137,10 +167,6 @@ final class VideoPlaylistSheet {
                 }
             }
 
-            boolean canLoad = player.canLoadMore();
-            int tail = queue.size() * rowHeight;
-            int height = tail + (canLoad ? footerHeight : 0);
-            viewportHeight = Math.min(maxHeight, height);
             content.setMinimumHeight(height);
             more.setVisibility(canLoad ? View.VISIBLE : View.GONE);
             FrameLayout.LayoutParams footer = (FrameLayout.LayoutParams) more.getLayoutParams();
@@ -150,7 +176,7 @@ final class VideoPlaylistSheet {
                 scroll.getLayoutParams().height = viewportHeight;
                 scroll.requestLayout();
             }
-            top = Math.min(top, height - viewportHeight);
+            top = Math.max(0, Math.min(top, height - viewportHeight));
             renderAt(top);
             if (top != scroll.getScrollY() && pendingScroll < 0) {
                 scroll.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
@@ -167,8 +193,8 @@ final class VideoPlaylistSheet {
         }
 
         private void renderAt(int top) {
-            int first = Math.max(0, top / rowHeight - 1);
-            int end = Math.min(queue.size(), (top + viewportHeight + rowHeight - 1) / rowHeight + 1);
+            int first = firstVisibleIndex(top, rowHeight);
+            int end = endVisibleIndex(top, viewportHeight, rowHeight, queue.size());
             for (int i = visible.size() - 1; i >= 0; i--) {
                 int index = visible.keyAt(i);
                 if (index >= first && index < end) continue;
@@ -183,7 +209,7 @@ final class VideoPlaylistSheet {
                 VideoRow row = visible.get(index);
                 if (row == null) {
                     row = available.poll();
-                    if (row == null) row = new VideoRow(content.getContext(), player, sheet);
+                    if (row == null) row = new VideoRow(content.getContext(), player, sheet, localCache);
                     FrameLayout.LayoutParams position = new FrameLayout.LayoutParams(-1, rowHeight, Gravity.TOP);
                     position.topMargin = index * rowHeight;
                     content.addView(row, position);
@@ -206,25 +232,44 @@ final class VideoPlaylistSheet {
         }
 
         void clear() {
-            scroll.removeCallbacks(render);
             scroll.setOnScrollChangeListener(null);
             pendingScroll = -1;
+            localCache.clear();
             for (int i = 0; i < visible.size(); i++) visible.valueAt(i).clear();
         }
     }
 
     private final class VideoRow extends LinearLayout {
+        private final Map<Integer, Boolean> localCache;
+        private final View indicator;
         private final View thumbnail;
         private final TextView title;
         private final TextView details;
+        private final Drawable normalBackground;
+        private final Drawable playingBackground;
+        private final int accentColor;
         private Object message;
         private boolean playing;
         private Future<?> fileCheck;
 
-        VideoRow(Context context, ListenVideoAgent player, Dialog sheet) {
+        VideoRow(Context context, ListenVideoAgent player, Dialog sheet, Map<Integer, Boolean> localCache) {
             super(context);
+            this.localCache = localCache;
             setGravity(Gravity.CENTER_VERTICAL);
-            setPadding(0, dp(context, 8), 0, dp(context, 8));
+            setPadding(0, dp(context, 8), dp(context, 16), dp(context, 8));
+            int sheetBackground = theme.activeColor("dialogBackground");
+            accentColor = theme.accentColor(sheetBackground);
+            int ripple = theme.activeColor("listSelector");
+            normalBackground = theme.rippleTransparent(context, 0, ripple);
+            playingBackground = theme.rippleRect(context, 0, theme.alpha(accentColor, 0x16), ripple);
+            setBackground(normalBackground);
+            indicator = new View(context);
+            indicator.setBackground(theme.roundRect(context, 1.5f, accentColor));
+            indicator.setVisibility(View.INVISIBLE);
+            LayoutParams indicatorSize = new LayoutParams(dp(context, 3), dp(context, 36));
+            indicatorSize.leftMargin = dp(context, 5);
+            indicatorSize.rightMargin = dp(context, 8);
+            addView(indicator, indicatorSize);
             thumbnail = createThumbnail(context);
             addView(thumbnail, new LayoutParams(dp(context, 96), dp(context, 64)));
             LinearLayout labels = new LinearLayout(context);
@@ -239,6 +284,7 @@ final class VideoPlaylistSheet {
             addView(labels, new LayoutParams(0, -2, 1));
             setOnClickListener(view -> {
                 if (message == null) return;
+                HostTheme.tickHaptic(view);
                 if (player.select(message)) sheet.dismiss();
                 else Toast.makeText(context, strings.get(context, "VideoPlaylistOpenFailed"), Toast.LENGTH_SHORT).show();
             });
@@ -250,20 +296,36 @@ final class VideoPlaylistSheet {
             message = target;
             this.playing = playing;
             Context context = getContext();
+            setBackground(playing ? playingBackground : normalBackground);
+            indicator.setVisibility(playing ? View.VISIBLE : View.INVISIBLE);
             bindThumbnail(thumbnail, target, false);
+            title.setTypeface(playing ? theme.bold() : Typeface.DEFAULT);
             title.setText(title(context, target));
             String time = duration(target);
             String prefix = playing ? strings.get(context, "VideoPlaying") + " · " + time : time;
-            details.setTextColor(theme.activeColor(playing ? "dialogTextBlue2" : "dialogTextGray2"));
-            details.setText(prefix);
+            details.setTextColor(playing ? accentColor : theme.activeColor("dialogTextGray2"));
             setContentDescription(title.getText() + ", " + time);
+            int messageId = host.messageIdOf(target);
+            Boolean known = knownLocalStatus(localCache, messageId,
+                    bridge.getField(target, "mediaExists"), bridge.getField(target, "attachPathExists"));
+            if (known != null) {
+                if (messageId != 0) localCache.put(messageId, known);
+                details.setText(prefix + " · " + strings.get(context,
+                        known ? "VideoStoredLocally" : "VideoNotStoredLocally"));
+                return;
+            }
+            details.setText(prefix);
             try {
                 fileCheck = FILE_CHECKS.submit(() -> {
                     boolean local = isLocal(target);
                     details.post(() -> {
+                        if (messageId != 0) localCache.put(messageId, local);
                         if (message == target && this.playing == playing) {
+                            details.setAlpha(0.65f);
                             details.setText(prefix + " · " + strings.get(context,
                                     local ? "VideoStoredLocally" : "VideoNotStoredLocally"));
+                            details.animate().alpha(1f).setDuration(140)
+                                    .setInterpolator(HostTheme.easeOutQuint()).start();
                         }
                     });
                 });
@@ -274,6 +336,8 @@ final class VideoPlaylistSheet {
 
         void clear() {
             message = null;
+            details.animate().cancel();
+            details.setAlpha(1f);
             if (fileCheck != null) {
                 fileCheck.cancel(false);
                 fileCheck = null;
@@ -281,10 +345,39 @@ final class VideoPlaylistSheet {
         }
     }
 
+    static int firstVisibleIndex(int top, int rowHeight) {
+        if (rowHeight <= 0) return 0;
+        return Math.max(0, Math.max(0, top) / rowHeight - 2);
+    }
+
+    static int endVisibleIndex(int top, int viewportHeight, int rowHeight, int size) {
+        if (rowHeight <= 0 || size <= 0) return 0;
+        return Math.min(size, (Math.max(0, top) + Math.max(0, viewportHeight) + rowHeight - 1) / rowHeight + 2);
+    }
+
+    static int centeredScrollTop(int index, int rowHeight, int totalHeight, int viewportHeight) {
+        if (index < 0 || rowHeight <= 0 || totalHeight <= viewportHeight) return 0;
+        int maxTop = Math.max(0, totalHeight - viewportHeight);
+        int desired = index * rowHeight - Math.max(0, viewportHeight - rowHeight) / 2;
+        return Math.max(0, Math.min(desired, maxTop));
+    }
+
+    static Boolean knownLocalStatus(Map<Integer, Boolean> cache, int messageId,
+                                    Object mediaExists, Object attachPathExists) {
+        if (Boolean.TRUE.equals(mediaExists) || Boolean.TRUE.equals(attachPathExists)) {
+            return Boolean.TRUE;
+        }
+        return cache != null && messageId != 0 ? cache.get(messageId) : null;
+    }
+
     View createThumbnail(Context context) {
+        return createThumbnail(context, 8);
+    }
+
+    View createThumbnail(Context context, int radiusDp) {
         Object thumbnail = bridge.newInstance(thumbnailClass, context);
         if (thumbnail instanceof View) {
-            bridge.invokeNamed(thumbnail, "setRoundRadius", dp(context, 8));
+            bridge.invokeNamed(thumbnail, "setRoundRadius", dp(context, radiusDp));
             return (View) thumbnail;
         }
         ImageView fallback = new ImageView(context);
@@ -356,7 +449,7 @@ final class VideoPlaylistSheet {
     private String duration(Object message) {
         Object value = bridge.invoke(message, host.message.getDuration);
         int seconds = value instanceof Number ? Math.max(0, ((Number) value).intValue()) : 0;
-        return String.format(java.util.Locale.US, "%d:%02d", seconds / 60, seconds % 60);
+        return HostStrings.formatDurationClock(seconds * 1000L);
     }
 
     private boolean isLocal(Object message) {

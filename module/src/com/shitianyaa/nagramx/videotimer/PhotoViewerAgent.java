@@ -48,6 +48,7 @@ final class PhotoViewerAgent {
 
     private volatile Object transferredPlayer;
     private ListenVideoAgent listen;
+    private HostTheme theme;
 
     PhotoViewerAgent(
             HostProfile host,
@@ -69,6 +70,10 @@ final class PhotoViewerAgent {
 
     void setListenVideo(ListenVideoAgent listen) {
         this.listen = listen;
+    }
+
+    void setTheme(HostTheme theme) {
+        this.theme = theme;
     }
 
     Object getTransferredPlayer() {
@@ -156,18 +161,20 @@ final class PhotoViewerAgent {
                 subtext = session.getFormattedRemainingTime();
             }
         }
+        int accent = theme != null ? theme.resolveDarkAccent(ACCENT_COLOR) : ACCENT_COLOR;
+        int accentSelector = theme != null ? theme.alpha(accent, 0x0F) : ACCENT_SELECTOR_COLOR;
         bridge.invokeNamed(entry.item, "setSubtext", subtext.isEmpty() ? null : subtext);
         bridge.invokeNamed(
                 entry.item,
                 "setEnabledByColor",
                 state.active,
                 MENU_TEXT_COLOR,
-                ACCENT_COLOR
+                accent
         );
         bridge.invokeNamed(
                 entry.item,
                 "setSelectorColor",
-                state.active ? ACCENT_SELECTOR_COLOR : MENU_SELECTOR_COLOR
+                state.active ? accentSelector : MENU_SELECTOR_COLOR
         );
     }
 
