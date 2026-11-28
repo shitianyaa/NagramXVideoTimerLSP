@@ -8,6 +8,7 @@ import android.widget.ImageView;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.function.IntSupplier;
 
 final class HostListenControls {
     private static final float[] SPEEDS = {0.5f, 1f, 1.2f, 1.5f, 1.7f, 2f};
@@ -192,6 +193,33 @@ final class HostListenControls {
 
     private int resource(String name, String type) {
         return context.getResources().getIdentifier(name, type, context.getPackageName());
+    }
+
+    /** Applies a vector menu icon while falling back cleanly on forks without 3-arg setTextAndIcon. */
+    static void applyMenuIcon(HostBridge bridge, View row, CharSequence label,
+                              Drawable icon, IntSupplier fallbackIconRes) {
+        if (bridge == null || row == null) {
+            return;
+        }
+        Method setTextAndIcon3 = bridge.findMethod(row.getClass(), "setTextAndIcon", 3, method -> {
+            Class<?>[] params = method.getParameterTypes();
+            return CharSequence.class.isAssignableFrom(params[0])
+                    && params[1] == int.class
+                    && Drawable.class.isAssignableFrom(params[2]);
+        });
+        if (setTextAndIcon3 != null) {
+            bridge.invoke(row, setTextAndIcon3, label, 0, icon);
+            return;
+        }
+        int fallback = fallbackIconRes != null ? fallbackIconRes.getAsInt() : 0;
+        if (fallback != 0) {
+            bridge.invokeNamed(row, "setTextAndIcon", label, fallback);
+        }
+        Method setIcon = bridge.findMethod(row.getClass(), "setIcon", 1,
+                method -> Drawable.class.isAssignableFrom(method.getParameterTypes()[0]));
+        if (setIcon != null) {
+            bridge.invoke(row, setIcon, icon);
+        }
     }
 
     private View hidden() {

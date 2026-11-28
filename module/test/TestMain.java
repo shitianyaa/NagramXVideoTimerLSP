@@ -1,7 +1,11 @@
 package com.shitianyaa.nagramx.videotimer;
 
+import tool.ModuleBuild;
+
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 桌面 JVM 单元测试入口（不依赖第三方测试运行器）。
@@ -312,6 +316,36 @@ public final class TestMain {
         check("矮横屏定时滚轮收紧为3项和126dp",
                 VideoSleepTimerSheet.pickerItemCount(406, true) == 3
                         && VideoSleepTimerSheet.pickerHeightDp(406, true) == 126);
+
+        check("听视频内容超出预算时滚动区夹紧为可用预算",
+                ListenVideoPage.resolveScrollHeight(1600, 1200, 480, 2400, 2208, 1680, false) == 1200);
+        check("听视频竖屏内容较短时滚动区撑高至84%保底页高",
+                ListenVideoPage.resolveScrollHeight(700, 1728, 480, 2400, 2208, 1680, false)
+                        == Math.round(2400 * 0.84f) - 480);
+        check("听视频横屏短内容保持自然高度",
+                ListenVideoPage.resolveScrollHeight(500, 900, 400, 1080, 1008, 1680, true) == 500);
+        check("听视频封面高度随横竖屏规则计算",
+                ListenVideoPage.computeCoverHeight(false, 1080, 2400, 540, 330, 1020) == 720
+                        && ListenVideoPage.computeCoverHeight(true, 2400, 1080, 540, 330, 1020) == 360);
+
+        check("构建版本排序按数值降序而非字典序",
+                ModuleBuild.compareVersionDesc("37.0.0", "9.0.0") < 0
+                        && ModuleBuild.compareVersionDesc("36.1.0", "37.0.0") > 0
+                        && ModuleBuild.compareVersionDesc("37.0", "34") < 0);
+        check("Windows 下转换 MSYS 盘符路径且 Linux 保持原样",
+                "D:\\AndroidSDK".equals(ModuleBuild.normalizePathForOs("/d/AndroidSDK", true))
+                        && "/d/AndroidSDK".equals(ModuleBuild.normalizePathForOs("/d/AndroidSDK", false)));
+        Set<String> pkgs = ModuleBuild.extractHostPackages(
+                "static final String PACKAGE_NAGRAMX = \"nu.gpu.nagram\";\n"
+                        + "static final String PACKAGE_NIAGRAMX = \"top.nkbe.niagram\";\n");
+        check("仅提取 HostProfile 宿主包名常量",
+                pkgs.size() == 2 && pkgs.contains("nu.gpu.nagram") && pkgs.contains("top.nkbe.niagram"));
+        List<ModuleBuild.DepSpec> deps = ModuleBuild.parseDepsManifest(Arrays.asList(
+                "# comment",
+                "",
+                "dexkit-2.3.0.aar|abcd|org/luckypray/dexkit/2.3.0/dexkit-2.3.0.aar|aar|dexkit-2.3.0.jar"));
+        check("deps.manifest 跳过注释并解析5字段",
+                deps.size() == 1 && "aar".equals(deps.get(0).kind) && "dexkit-2.3.0.jar".equals(deps.get(0).outputName));
     }
 
     private static void testProbeResultEnded() {

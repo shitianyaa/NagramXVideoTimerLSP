@@ -255,15 +255,16 @@ final class PlayerUiAgent {
             boolean sideMenued = Boolean.TRUE.equals(bridge.getField(view, ui.isSideMenuedField));
             int rightMargin = 36 + (sideMenued ? 64 : 0);
             if (twoLine) {
-                if (relayout || !wasTwoLine) {
+                boolean layoutChanged = relayout || !wasTwoLine;
+                if (layoutChanged) {
                     if (title != null) {
                         frame(context, title, 20, 37, 0, rightMargin);
-                        if (host.niagram1322) {
-                            updateVideoTitle(context, title, message, wasTwoLine);
-                        }
                     }
                     int subtitleRightMargin = rightMargin + (host.niagram1322 ? 44 : 0);
                     frame(context, subtitle, 18, 37, 18, subtitleRightMargin);
+                }
+                if (host.niagram1322 && title != null && (layoutChanged || modeOrTrackChanged)) {
+                    updateVideoTitle(context, title, message, wasTwoLine);
                 }
                 subtitle.animate().cancel();
                 bridge.invoke(subtitle, ui.miniPlayerSetText, text, wasTwoLine && modeOrTrackChanged);

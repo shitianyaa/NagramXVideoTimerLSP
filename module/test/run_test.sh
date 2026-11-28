@@ -1,41 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-MOD="$ROOT/module"
-OUT="$MOD/build/test-classes"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$PROJECT_ROOT"
 
-if command -v cygpath >/dev/null 2>&1; then
-  export MSYS2_ARG_CONV_EXCL='*'
-  native_path() { cygpath -w "$1"; }
-  SEP=';'
-  AJ_W="${AJ_W:-D:/AndroidSDK/platforms/android-34/android.jar}"
-  JDK_W="${JDK_W:-D:/JAVA/bin}"
-  JAVAC="$JDK_W/javac.exe"
-  JAVA="$JDK_W/java.exe"
-else
-  native_path() { printf '%s' "$1"; }
-  SEP=':'
-  : "${AJ_W:?Set AJ_W to the Android SDK android.jar path}"
-  JAVAC="${JAVA_HOME:+$JAVA_HOME/bin/}javac"
-  JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+resolve_jdk_bin() {
+  local cand
+  for cand in "${JDK_W:-}" "${JAVA_HOME:+$JAVA_HOME/bin}" "/d/JAVA/bin" "/mnt/d/JAVA/bin"; do
+    [[ -n "$cand" ]] || continue
+    command -v cygpath >/dev/null 2>&1 && cand="$(cygpath -u "$cand")"
+    if [[ -x "$cand/javac" || -x "$cand/javac.exe" ]]; then
+      printf '%s\n' "$cand"
+      return 0
+    fi
+  done
+  if command -v javac >/dev/null 2>&1; then
+    dirname "$(command -v javac)"
+    return 0
+  fi
+  echo "Missing JDK javac (set JAVA_HOME or JDK_W)" >&2
+  return 1
+}
+
+JDK_BIN="$(resolve_jdk_bin)"
+EXT_EXE=""; [[ -x "$JDK_BIN/javac.exe" ]] && EXT_EXE=".exe"
+TOOL_SRC="module/tools/ModuleBuild.java"
+TOOLS_OUT="module/build/tools"
+TOOL_CLASS="$TOOLS_OUT/tool/ModuleBuild.class"
+if [[ ! -f "$TOOL_CLASS" || "$TOOL_SRC" -nt "$TOOL_CLASS" ]]; then
+  mkdir -p "$TOOLS_OUT"
+  "$JDK_BIN/javac$EXT_EXE" -J-Duser.language=en -encoding UTF-8 -d "$TOOLS_OUT" "$TOOL_SRC"
 fi
-API_W="$(native_path "$MOD/lib/api-102.jar")"
-if command -v cygpath >/dev/null 2>&1; then
-  "$ROOT/gradlew.bat" -p "$(native_path "$ROOT")" :app:prepareHookTestLibraries --quiet
-else
-  bash "$ROOT/gradlew" -p "$ROOT" :app:prepareHookTestLibraries --quiet
-fi
-LIBS_W="$(native_path "$MOD/build/test-libs")/*"
 
-mkdir -p "$OUT"
-SRCS=()
-while IFS= read -r -d '' f; do SRCS+=("$(native_path "$f")"); done < <(find "$MOD/src" "$MOD/test" -name '*.java' -print0)
-
-"$JAVAC" -J-Duser.language=en -J-Duser.country=US \
-  -encoding UTF-8 -source 8 -target 8 -nowarn \
-  -cp "$AJ_W$SEP$API_W$SEP$LIBS_W" -d "$(native_path "$OUT")" "${SRCS[@]}"
-
-"$JAVA" -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 \
-  -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 "-Dtest.output=$(native_path "$MOD/build")" \
-  -cp "$(native_path "$OUT")$SEP$AJ_W$SEP$API_W$SEP$LIBS_W" com.shitianyaa.nagramx.videotimer.TestMain
+exec "$JDK_BIN/java$EXT_EXE" -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 \
+  -cp "$TOOLS_OUT" tool.ModuleBuild test

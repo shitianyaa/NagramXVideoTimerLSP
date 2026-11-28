@@ -92,7 +92,7 @@ final class AudioTimerMenu {
         View row = (View) added;
         String label = strings.get(context, "VideoSleepTimer");
         int iconColor = theme.activeColor("actionBarDefaultSubmenuItemIcon");
-        ListenVideoIcons.applyMenuIcon(host.bridge, row, label,
+        HostListenControls.applyMenuIcon(host.bridge, row, label,
                 ListenVideoIcons.timer(context, iconColor),
                 () -> context.getResources().getIdentifier("photo_timer", "drawable", context.getPackageName()));
         host.bridge.invoke(options, add, row);
@@ -118,7 +118,7 @@ final class AudioTimerMenu {
         if (!(added instanceof View)) return;
         View row = (View) added;
         int iconColor = theme.activeColor("actionBarDefaultSubmenuItemIcon");
-        ListenVideoIcons.applyMenuIcon(host.bridge, row, label,
+        HostListenControls.applyMenuIcon(host.bridge, row, label,
                 ListenVideoIcons.timer(context, iconColor),
                 () -> context.getResources().getIdentifier("photo_timer", "drawable", context.getPackageName()));
         // 旧宿主使用固定子菜单，把入口放到第一项以适应矮播放器。

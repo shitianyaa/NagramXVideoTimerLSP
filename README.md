@@ -80,10 +80,11 @@
 ## 构建与反馈
 
 ```powershell
-.\gradlew.bat :app:assembleDebug :app:assembleRelease :app:lintDebug
+.\build.ps1
+.\build.ps1 -Release
 .\module\test\run_test.ps1
 ```
 
-`build.ps1` 和 `build.sh` 会把测试包放到 `build/NagramTimer-v<版本>-debug.apk`。Debug 使用开发签名，正式包的签名配置见 [keystore.properties.example](keystore.properties.example)。标签格式为 `versionCode-versionName`，个人仓库的 CI 按标签构建，模块仓库的更新单独进行。
+直接通过 JDK 与 Android SDK 构建，`build.ps1` 和 `build.sh` 会分别输出到 `build/NagramTimer-v<版本>-debug.apk` 与 `build/NagramTimer-v<版本>-release.apk`（Windows / Linux / macOS 均可运行，版本与 SDK 参数配置在 [module.properties](module.properties)）。Debug 使用开发签名，正式包的签名配置见 [keystore.properties.example](keystore.properties.example)。标签格式为 `versionCode-versionName`，个人仓库的 CI 按标签构建，模块仓库的更新单独进行。
 
 [更新日志](CHANGELOG.md) · [问题反馈](https://github.com/shitianyaa/NagramXVideoTimerLSP/issues) · [Apache License 2.0](LICENSE)

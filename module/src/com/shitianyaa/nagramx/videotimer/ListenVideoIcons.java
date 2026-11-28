@@ -11,10 +11,6 @@ import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
-import android.view.View;
-
-import java.lang.reflect.Method;
-import java.util.function.IntSupplier;
 
 /** AC icon set. Pure Android Canvas; no host resource or bitmap required. */
 final class ListenVideoIcons extends Drawable {
@@ -31,6 +27,9 @@ final class ListenVideoIcons extends Drawable {
     private ColorStateList tint;
     private PorterDuff.Mode tintMode = PorterDuff.Mode.SRC_IN;
     private PorterDuffColorFilter tintFilter;
+    private boolean hasTintFilter;
+    private int lastTintColor;
+    private PorterDuff.Mode lastTintMode;
 
     static ListenVideoIcons listen(Context context, int color) {
         return new ListenVideoIcons(context, false, color);
@@ -38,30 +37,6 @@ final class ListenVideoIcons extends Drawable {
 
     static ListenVideoIcons timer(Context context, int color) {
         return new ListenVideoIcons(context, true, color);
-    }
-
-    /** Applies a vector menu icon while falling back cleanly on forks without 3-arg setTextAndIcon. */
-    static void applyMenuIcon(HostBridge bridge, View row, CharSequence label,
-                              Drawable icon, IntSupplier fallbackIconRes) {
-        Method setTextAndIcon3 = bridge.findMethod(row.getClass(), "setTextAndIcon", 3, method -> {
-            Class<?>[] p = method.getParameterTypes();
-            return CharSequence.class.isAssignableFrom(p[0])
-                    && p[1] == int.class
-                    && Drawable.class.isAssignableFrom(p[2]);
-        });
-        if (setTextAndIcon3 != null) {
-            bridge.invoke(row, setTextAndIcon3, label, 0, icon);
-            return;
-        }
-        int fallback = fallbackIconRes != null ? fallbackIconRes.getAsInt() : 0;
-        if (fallback != 0) {
-            bridge.invokeNamed(row, "setTextAndIcon", label, fallback);
-        }
-        Method setIcon = bridge.findMethod(row.getClass(), "setIcon", 1,
-                method -> Drawable.class.isAssignableFrom(method.getParameterTypes()[0]));
-        if (setIcon != null) {
-            bridge.invoke(row, setIcon, icon);
-        }
     }
 
     private ListenVideoIcons(Context context, boolean timer, int color) {
@@ -164,14 +139,12 @@ final class ListenVideoIcons extends Drawable {
     public void setTintList(ColorStateList tint) {
         this.tint = tint;
         updateTintFilter();
-        invalidateSelf();
     }
 
     @Override
     public void setTintMode(PorterDuff.Mode tintMode) {
         this.tintMode = tintMode != null ? tintMode : PorterDuff.Mode.SRC_IN;
         updateTintFilter();
-        invalidateSelf();
     }
 
     @Override
@@ -190,11 +163,25 @@ final class ListenVideoIcons extends Drawable {
     }
 
     private boolean updateTintFilter() {
-        PorterDuffColorFilter updated = tint == null || tintMode == null
-                ? null
-                : new PorterDuffColorFilter(tint.getColorForState(getState(), tint.getDefaultColor()), tintMode);
-        if (updated == null && tintFilter == null) return false;
-        tintFilter = updated;
+        if (tint == null || tintMode == null) {
+            if (!hasTintFilter) {
+                return false;
+            }
+            tintFilter = null;
+            hasTintFilter = false;
+            lastTintColor = 0;
+            lastTintMode = null;
+            invalidateSelf();
+            return true;
+        }
+        int nextColor = tint.getColorForState(getState(), tint.getDefaultColor());
+        if (hasTintFilter && nextColor == lastTintColor && tintMode == lastTintMode) {
+            return false;
+        }
+        tintFilter = new PorterDuffColorFilter(nextColor, tintMode);
+        hasTintFilter = true;
+        lastTintColor = nextColor;
+        lastTintMode = tintMode;
         invalidateSelf();
         return true;
     }

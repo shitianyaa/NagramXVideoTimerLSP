@@ -1,0 +1,5 @@
+# file|sha256|maven_path|kind|output_name
+dexkit-2.3.0.aar|8df532c4126b58490667f71127dc57aef62ccf3578d1d17330f2a1cb8836218e|org/luckypray/dexkit/2.3.0/dexkit-2.3.0.aar|aar|dexkit-2.3.0.jar
+flatbuffers-java-23.5.26.jar|8d10cac2ea9878896077ba437d76fdb1b9a07f55a863c560bb8a024b04103f8b|com/google/flatbuffers/flatbuffers-java/23.5.26/flatbuffers-java-23.5.26.jar|jar|flatbuffers-java-23.5.26.jar
+kotlin-stdlib-1.5.0.jar|52283996fe4067cd7330288b96ae67ecd463614dc741172c54d9d349ab6a9cd7|org/jetbrains/kotlin/kotlin-stdlib/1.5.0/kotlin-stdlib-1.5.0.jar|jar|kotlin-stdlib-1.5.0.jar
+annotations-13.0.jar|ace2a10dc8e2d5fd34925ecac03e4988b2c0f851650c94b8cef49ba1bd111478|org/jetbrains/annotations/13.0/annotations-13.0.jar|jar|annotations-13.0.jar

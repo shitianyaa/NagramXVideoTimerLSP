@@ -12,6 +12,7 @@ import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -42,6 +43,13 @@ final class ListenVideoPage {
     private final int background;
     private final int coverColor;
     private final FrameLayout cover;
+    private final FrameLayout header;
+    private final LinearLayout content;
+    private final LinearLayout controls;
+    private final LinearLayout buttons;
+    private boolean appliedWide;
+    private int appliedWidthPx;
+    private int appliedHeightPx;
     private final View coverThumbnail;
     private final TextView title;
     private final TextView elapsed;
@@ -118,36 +126,38 @@ final class ListenVideoPage {
         body = new LinearLayout(activity) {
             @Override
             protected void onMeasure(int widthSpec, int heightSpec) {
+                int availW = MeasureSpec.getSize(widthSpec);
                 int availH = MeasureSpec.getSize(heightSpec);
-                boolean wide = availH > 0 && MeasureSpec.getSize(widthSpec) > availH;
+                boolean wide = availH > 0 && availW > availH;
                 int maxH = sheetMaxHeight(availH, dp(wide ? 24 : 64), dp(240));
                 if (availH > 0 && getChildCount() >= 4) {
+                    if (availW > 0 && (wide != appliedWide || availW != appliedWidthPx || availH != appliedHeightPx)) {
+                        applyResponsiveLayout(wide, availW, availH);
+                    }
+                    int maxHSpec = MeasureSpec.makeMeasureSpec(maxH, MeasureSpec.AT_MOST);
                     View headerView = getChildAt(0);
                     View dividerView = getChildAt(1);
                     View scrollView = getChildAt(2);
                     View controlsView = getChildAt(3);
-                    measureChildWithMargins(headerView, widthSpec, 0, MeasureSpec.makeMeasureSpec(maxH, MeasureSpec.AT_MOST), 0);
-                    measureChildWithMargins(dividerView, widthSpec, 0, MeasureSpec.makeMeasureSpec(maxH, MeasureSpec.AT_MOST), 0);
-                    measureChildWithMargins(controlsView, widthSpec, 0, MeasureSpec.makeMeasureSpec(maxH, MeasureSpec.AT_MOST), 0);
-                    int fixed = headerView.getMeasuredHeight() + dividerView.getMeasuredHeight()
-                            + controlsView.getMeasuredHeight() + getPaddingTop() + getPaddingBottom();
+                    measureChildWithMargins(headerView, widthSpec, 0, maxHSpec, 0);
+                    measureChildWithMargins(dividerView, widthSpec, 0, maxHSpec, 0);
+                    measureChildWithMargins(controlsView, widthSpec, 0, maxHSpec, 0);
+                    int fixed = getPaddingTop() + getPaddingBottom()
+                            + childHeightWithMargins(headerView)
+                            + childHeightWithMargins(dividerView)
+                            + childHeightWithMargins(controlsView);
                     int scrollBudget = Math.max(dp(96), maxH - fixed);
-                    scrollView.getLayoutParams().height = LayoutParams.WRAP_CONTENT;
-                    super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(maxH, MeasureSpec.AT_MOST));
-                    int desiredScroll = 0;
-                    if (scrollView.getMeasuredHeight() > scrollBudget) {
-                        desiredScroll = scrollBudget;
-                    } else if (!wide) {
-                        int minSheetH = sheetPortraitMinHeight(availH, maxH, dp(560));
-                        if (minSheetH > fixed) {
-                            desiredScroll = Math.max(scrollView.getMeasuredHeight(),
-                                    Math.min(scrollBudget, minSheetH - fixed));
-                        }
+                    measureChildWithMargins(scrollView, widthSpec, 0,
+                            MeasureSpec.makeMeasureSpec(scrollBudget, MeasureSpec.AT_MOST), 0);
+                    int desiredScroll = resolveScrollHeight(scrollView.getMeasuredHeight(), scrollBudget,
+                            fixed + verticalMargins(scrollView), availH, maxH, dp(560), wide);
+                    if (desiredScroll != scrollView.getMeasuredHeight()) {
+                        measureChildWithMargins(scrollView, widthSpec, 0,
+                                MeasureSpec.makeMeasureSpec(desiredScroll, MeasureSpec.EXACTLY), 0);
                     }
-                    if (desiredScroll > 0 && desiredScroll != scrollView.getLayoutParams().height) {
-                        scrollView.getLayoutParams().height = desiredScroll;
-                        super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(maxH, MeasureSpec.AT_MOST));
-                    }
+                    int measuredW = getPaddingLeft() + getPaddingRight() + maxChildWidthWithMargins(this);
+                    int measuredH = Math.min(maxH, fixed + childHeightWithMargins(scrollView));
+                    setMeasuredDimension(resolveSize(measuredW, widthSpec), resolveSize(measuredH, maxHSpec));
                     return;
                 }
                 super.onMeasure(widthSpec, maxH > 0
@@ -157,7 +167,7 @@ final class ListenVideoPage {
         };
         body.setOrientation(LinearLayout.VERTICAL);
 
-        FrameLayout header = new FrameLayout(activity);
+        header = new FrameLayout(activity);
         Object actionBar = bridge.newInstance("org.telegram.ui.ActionBar.ActionBar", (Context) activity);
         if (!(actionBar instanceof View)) throw new IllegalStateException("Host ActionBar unavailable");
         bridge.invokeNamed(actionBar, "setOccupyStatusBar", false);
@@ -189,6 +199,7 @@ final class ListenVideoPage {
         timerRemaining = text("", 13, accent);
         timerRemaining.setTypeface(theme.bold());
         timerRemaining.setSingleLine(true);
+        timerRemaining.setFontFeatureSettings("tnum");
         timerRemaining.setEllipsize(TextUtils.TruncateAt.END);
         timerRemaining.setMaxWidth(dp(124));
         timerRemaining.setPadding(dp(8), 0, dp(2), 0);
@@ -206,6 +217,9 @@ final class ListenVideoPage {
         int widthPx = activity.getResources().getDisplayMetrics().widthPixels;
         int heightPx = activity.getResources().getDisplayMetrics().heightPixels;
         boolean landscape = widthPx > heightPx;
+        appliedWide = landscape;
+        appliedWidthPx = widthPx;
+        appliedHeightPx = heightPx;
 
         body.addView(header, new LinearLayout.LayoutParams(-1, dp(landscape ? 48 : 54)));
         View divider = new View(activity);
@@ -213,15 +227,13 @@ final class ListenVideoPage {
         body.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
 
         ScrollView scroll = HostTheme.pullDownScrollView(activity);
-        LinearLayout content = column();
+        content = column();
         content.setPadding(dp(24), dp(landscape ? 10 : 20), dp(24), dp(landscape ? 4 : 12));
         content.setGravity(Gravity.TOP);
         cover = new FrameLayout(activity);
         cover.setBackground(theme.roundRect(activity, 12, coverColor));
         cover.setClipToOutline(true);
-        int coverHeight = landscape
-                ? Math.min(dp(180), Math.max(dp(110), heightPx / 3))
-                : Math.min(dp(340), Math.min(widthPx * 2 / 3, heightPx * 2 / 5));
+        int coverHeight = computeCoverHeight(landscape, widthPx, heightPx, dp(180), dp(110), dp(340));
         coverThumbnail = playlist.createThumbnail(activity, 12);
         playlist.prepareCover(coverThumbnail);
         cover.addView(coverThumbnail, new FrameLayout.LayoutParams(-1, -1));
@@ -259,7 +271,7 @@ final class ListenVideoPage {
         scroll.addView(content);
         body.addView(scroll, new LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        LinearLayout controls = column();
+        controls = column();
         controls.setPadding(dp(16), dp(landscape ? 4 : 10), dp(16), dp(landscape ? 6 : 22));
         progress = hostControls.seekBar(this);
         FrameLayout seekWrap = new FrameLayout(activity) {
@@ -290,7 +302,7 @@ final class ListenVideoPage {
         times.addView(total, new LinearLayout.LayoutParams(0, -2, 1));
         controls.addView(times, new LinearLayout.LayoutParams(-1, -2));
 
-        LinearLayout buttons = new LinearLayout(activity);
+        buttons = new LinearLayout(activity);
         buttons.setGravity(Gravity.CENTER);
         View speed = hostControls.speed(player);
         buttons.addView(speed, new LinearLayout.LayoutParams(0, dp(56), 1));
@@ -480,7 +492,9 @@ final class ListenVideoPage {
                 ? strings.format(activity, "ListenVideoTimerRemaining", remaining)
                 : strings.get(activity, "VideoSleepTimer"));
         if (show) {
-            timerRemaining.setText(remaining);
+            if (!TextUtils.equals(timerRemaining.getText(), remaining)) {
+                timerRemaining.setText(remaining);
+            }
             if (timerRemaining.getVisibility() != View.VISIBLE) {
                 if (animated) {
                     timerRemaining.setAlpha(0f);
@@ -606,6 +620,89 @@ final class ListenVideoPage {
 
     static String time(long ms) {
         return HostStrings.formatDurationClock(ms);
+    }
+
+    private void applyResponsiveLayout(boolean wide, int widthPx, int heightPx) {
+        boolean wideChanged = wide != appliedWide;
+        appliedWide = wide;
+        appliedWidthPx = widthPx;
+        appliedHeightPx = heightPx;
+        if (header == null || content == null || controls == null || buttons == null) {
+            return;
+        }
+        setHeightIfChanged(cover.getLayoutParams(),
+                computeCoverHeight(wide, widthPx, heightPx, dp(180), dp(110), dp(340)));
+        if (!wideChanged) {
+            return;
+        }
+        setHeightIfChanged(header.getLayoutParams(), dp(wide ? 48 : 54));
+        content.setPadding(dp(24), dp(wide ? 10 : 20), dp(24), dp(wide ? 4 : 12));
+        title.setTextSize(wide ? 17 : 19);
+        ViewGroup.LayoutParams titleLp = title.getLayoutParams();
+        if (titleLp instanceof LinearLayout.LayoutParams) {
+            ((LinearLayout.LayoutParams) titleLp).topMargin = dp(wide ? 8 : 18);
+        }
+        controls.setPadding(dp(16), dp(wide ? 4 : 10), dp(16), dp(wide ? 6 : 22));
+        setHeightIfChanged(buttons.getLayoutParams(), dp(wide ? 58 : 64));
+    }
+
+    private static void setHeightIfChanged(ViewGroup.LayoutParams params, int height) {
+        if (params != null && params.height != height) {
+            params.height = height;
+        }
+    }
+
+    private static int childHeightWithMargins(View child) {
+        return child.getMeasuredHeight() + verticalMargins(child);
+    }
+
+    private static int verticalMargins(View child) {
+        ViewGroup.LayoutParams lp = child.getLayoutParams();
+        if (lp instanceof ViewGroup.MarginLayoutParams) {
+            ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
+            return mlp.topMargin + mlp.bottomMargin;
+        }
+        return 0;
+    }
+
+    private static int maxChildWidthWithMargins(ViewGroup parent) {
+        int max = 0;
+        for (int i = 0, count = parent.getChildCount(); i < count; i++) {
+            View child = parent.getChildAt(i);
+            if (child.getVisibility() == View.GONE) {
+                continue;
+            }
+            int horizontalMargin = 0;
+            ViewGroup.LayoutParams lp = child.getLayoutParams();
+            if (lp instanceof ViewGroup.MarginLayoutParams) {
+                ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
+                horizontalMargin = mlp.leftMargin + mlp.rightMargin;
+            }
+            max = Math.max(max, child.getMeasuredWidth() + horizontalMargin);
+        }
+        return max;
+    }
+
+    static int computeCoverHeight(boolean landscape, int widthPx, int heightPx,
+                                  int maxLandscapePx, int minLandscapePx, int maxPortraitPx) {
+        if (landscape) {
+            return Math.min(maxLandscapePx, Math.max(minLandscapePx, heightPx / 3));
+        }
+        return Math.min(maxPortraitPx, Math.min(widthPx * 2 / 3, heightPx * 2 / 5));
+    }
+
+    static int resolveScrollHeight(int naturalScroll, int scrollBudget, int fixedHeight,
+                                   int availHeight, int maxSheetHeight, int minPortraitHeight, boolean wide) {
+        if (naturalScroll > scrollBudget) {
+            return scrollBudget;
+        }
+        if (!wide) {
+            int minSheetH = sheetPortraitMinHeight(availHeight, maxSheetHeight, minPortraitHeight);
+            if (minSheetH > fixedHeight) {
+                return Math.max(naturalScroll, Math.min(scrollBudget, minSheetH - fixedHeight));
+            }
+        }
+        return naturalScroll;
     }
 
     static int sheetMaxHeight(int availableHeight, int topReserve, int minHeight) {

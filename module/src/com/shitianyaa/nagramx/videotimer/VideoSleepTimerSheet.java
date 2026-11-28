@@ -344,13 +344,21 @@ final class VideoSleepTimerSheet {
     private final class PickerPair {
         private final View hours;
         private final View minutes;
+        private final int wheelHeightDp;
         Runnable onPreview;
 
         PickerPair(Context context, int initialMinutes, int accent) {
+            android.util.DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+            float density = Math.max(1f, metrics.density);
+            int screenH = Math.round(metrics.heightPixels / density);
+            boolean landscape = metrics.widthPixels > metrics.heightPixels;
+            wheelHeightDp = pickerHeightDp(screenH, landscape);
+            int itemCount = pickerItemCount(screenH, landscape);
+
             int h = Math.max(0, Math.min(23, initialMinutes / 60));
             int m = Math.max(0, Math.min(59, initialMinutes % 60));
-            hours = createPicker(context, 23, h, accent, val -> strings.format(context, "VideoSleepTimerDurationHours", val));
-            minutes = createPicker(context, 59, m, accent, val -> strings.minutes(context, val));
+            hours = createPicker(context, 23, h, accent, itemCount, val -> strings.format(context, "VideoSleepTimerDurationHours", val));
+            minutes = createPicker(context, 59, m, accent, itemCount, val -> strings.minutes(context, val));
             if (isUsable()) {
                 syncMinuteRange(bridge, hours, minutes);
                 installChangeListeners();
@@ -373,7 +381,7 @@ final class VideoSleepTimerSheet {
             row.setGravity(Gravity.CENTER);
             row.addView(hours, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
             row.addView(minutes, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
-            root.addView(row, linear(context, MATCH, pickerHeightDp(screenHeightDp(context), isLandscape(context)), 12, 8, 12, 0, -1));
+            root.addView(row, linear(context, MATCH, wheelHeightDp, 12, 8, 12, 0, -1));
         }
 
         int totalMinutes() {
@@ -425,7 +433,7 @@ final class VideoSleepTimerSheet {
         }
 
         @SuppressLint("ClickableViewAccessibility")
-        private View createPicker(Context context, int max, int value, int accent, FormatterFunction format) {
+        private View createPicker(Context context, int max, int value, int accent, int itemCount, FormatterFunction format) {
             if (numberPickerClass == null) return null;
             Object pickerObj = bridge.newInstance(numberPickerClass, context, 20, null);
             if (pickerObj == null) {
@@ -437,7 +445,7 @@ final class VideoSleepTimerSheet {
             if (!(pickerObj instanceof View)) return null;
             View picker = (View) pickerObj;
 
-            bridge.invokeNamed(picker, "setItemCount", pickerItemCount(screenHeightDp(context), isLandscape(context)));
+            bridge.invokeNamed(picker, "setItemCount", itemCount);
             bridge.invokeNamed(picker, "setTextColor", theme.activeColor("dialogTextBlack"));
             bridge.invokeNamed(picker, "setSelectorColor", theme.alpha(accent, 0x48));
             bridge.invokeNamed(picker, "setMinValue", 0);
@@ -502,16 +510,6 @@ final class VideoSleepTimerSheet {
     static int pickerHeightDp(int screenHeightDp, boolean landscape) {
         if (landscape) return screenHeightDp < 440 ? 126 : 180;
         return screenHeightDp >= 760 ? 252 : 180;
-    }
-
-    private static int screenHeightDp(Context context) {
-        float density = Math.max(1f, context.getResources().getDisplayMetrics().density);
-        return Math.round(context.getResources().getDisplayMetrics().heightPixels / density);
-    }
-
-    private static boolean isLandscape(Context context) {
-        return context.getResources().getDisplayMetrics().widthPixels
-                > context.getResources().getDisplayMetrics().heightPixels;
     }
 
     static void syncMinuteRange(HostBridge bridge, Object hours, Object minutes) {

@@ -69,7 +69,7 @@ final class ListenVideoAgent {
         Object item = bridge.invoke(menu, addSubItem, MENU_ID, 0, label);
         if (!(item instanceof View)) return null;
         View view = (View) item;
-        ListenVideoIcons.applyMenuIcon(bridge, view, label,
+        HostListenControls.applyMenuIcon(bridge, view, label,
                 ListenVideoIcons.listen(activity, 0xFFFAFAFA),
                 () -> activity.getResources().getIdentifier("msg_media", "drawable", activity.getPackageName()));
         bridge.invokeNamed(view, "setColors", 0xFFFAFAFA, 0xFFFAFAFA);
