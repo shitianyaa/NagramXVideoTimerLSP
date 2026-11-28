@@ -4,6 +4,24 @@
 
 ## [未发布]
 
+## [1.3.1] - 2026-11-28
+
+### 更改
+
+- 「听视频」播放页改为原生圆角浮动卡片布局：顶部保留暗色遮罩与拖拽条，点击空白区域、左上角向下收起箭头或下滑均可收起；竖屏下最低高度提升至可用高度的 `84%`，并支持横竖屏切换时实时重算页高与封面尺寸。
+- 统一自定义矢量图标 `ListenVideoIcons`：PhotoViewer 菜单中的「听视频」改用耳机与三音柱图标，听视频页右上角按钮与音乐「定时关闭」菜单项统一改用断环秒表与四音柱图标。
+- 视频定时面板与音乐定时面板在高屏竖屏下展开为 `252dp`、`7` 个可见滚轮项，优化快速选择按钮与主操作按钮对比度，并避免双层底部面板顶边重叠。
+- 共享视频列表改为同步窗口渲染，首次打开自动居中定位当前播放条目并以强调色指示条高亮，缓存校验完成时柔和淡入。
+
+### 修复
+
+- 修复听视频页 `onMeasure` 期间修改滚动区 `LayoutParams.height` 并二次测量引起的多余重排；顶部剩余定时改用等宽数字（`tnum`）防止跳秒抖动。
+- 修复 Niagram 13.2.2 后台播放在开启两行定时显示后切换音视频或定时模式时迷你播放器标题未同步刷新的问题。
+
+### 构建
+
+- 移除 Gradle、AGP 与历史 `app/` Kotlin 壳目录，改由跨平台纯 JDK 工具类 `ModuleBuild.java` 与精简包装脚本（`build.ps1`、`build.sh`、`run_test.ps1`、`run_test.sh`）直接编排 `javac`、`d8`、`aapt2`、`zipalign`（16KB 页对齐）与 `apksigner` 出包。
+
 ## [1.3.0] - 2026-11-26
 
 ### 新增
@@ -115,7 +133,8 @@
 - 模块状态页、运行时签名探测、日志和安全停用机制。
 - GitHub Actions 自动构建、检查和标签发布流程。
 
-[未发布]: https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/compare/10300-1.3.0...HEAD
+[未发布]: https://github.com/shitianyaa/NagramXVideoTimerLSP/compare/10301-1.3.1...HEAD
+[1.3.1]: https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/releases/tag/10301-1.3.1
 [1.3.0]: https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/releases/tag/10300-1.3.0
 [1.2.0]: https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/releases/tag/10200-1.2.0
 [1.1.2]: https://github.com/Xposed-Modules-Repo/com.shitianyaa.nagramx.videotimer/releases/tag/10102-1.1.2
